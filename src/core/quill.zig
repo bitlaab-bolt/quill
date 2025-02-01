@@ -1,8 +1,12 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const uuid = @import("./uuid.zig");
+
 const sqlite3 = @import("../binding/sqlite3.zig");
+const STMT = sqlite3.STMT;
 const Flag = sqlite3.OpenFlag;
+const Option = sqlite3.Option;
 const ExecResult = sqlite3.ExecResult;
 
 
@@ -11,9 +15,18 @@ instance: sqlite3.Database,
 
 const Self = @This();
 
-/// # Creates a Database Instance
+/// # Initializes SQLite with Global Configuration
+pub fn init(opt: Option) !void {
+    try sqlite3.config(@intFromEnum(opt));
+    try sqlite3.initialize();
+}
+
+/// # Destroys SQLite Resources and Configurations
+pub fn deinit() !void { try sqlite3.shutdown(); }
+
+/// # Open or Creates a Database Instance
 /// - `file_path` - When **null**, creates an in-memory database
-pub fn init(heap: Allocator, filename: ?[]const u8) !Self {
+pub fn open(heap: Allocator, filename: ?[]const u8) !Self {
     const flags = @intFromEnum(Flag.Create) | @intFromEnum(Flag.WriteWrite);
 
     const db = if (filename) |file| try sqlite3.openV2(file, flags)
@@ -23,7 +36,7 @@ pub fn init(heap: Allocator, filename: ?[]const u8) !Self {
 }
 
 /// # Closes the Database Instance
-pub fn deinit(self: *Self) void { sqlite3.closeV2(self.instance); }
+pub fn close(self: *Self) void { sqlite3.closeV2(self.instance); }
 
 /// # Performs One-Step Query Execution
 /// - Convenient wrapper around `prepare()`, `step()`, and `finalize()`
@@ -39,3 +52,15 @@ pub fn exec(self: *Self, sql: []const u8) !ExecResult {
     return try sqlite3.exec(self.heap, self.instance, sql);
 }
 
+pub fn prepare(self: *Self, sql: []const u8) !STMT {
+    return try sqlite3.prepareV3(self.instance, sql);
+}
+
+// Some high level function such as CURD in one and many forms
+
+
+
+pub const QueryBuilder = struct {
+    // TODO: build complete queries from scratch with step by step function call
+    // TODO: Parse and build complete queries for intermediate JSON string
+};

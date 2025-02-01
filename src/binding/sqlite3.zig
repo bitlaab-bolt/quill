@@ -13,16 +13,43 @@ const Error = error {
     UnableToOpen,
     InterfaceMisuse,
     UnableToExecuteQuery,
+    BindParameterNotFound,
     Unknown,
 };
 
 pub const Database = ?*sqlite3.sqlite3;
+pub const STMT = ?*sqlite3.sqlite3_stmt;
 
 pub const OpenFlag = enum(c_int) {
     Create = sqlite3.SQLITE_OPEN_CREATE,
     ReadOnly = sqlite3.SQLITE_OPEN_READONLY,
     WriteWrite = sqlite3.SQLITE_OPEN_READWRITE,
 };
+
+pub const Option = enum(i32) {
+    /// Disables mutexes (no thread safety, best for performance)
+    SingleThreaded = sqlite3.SQLITE_CONFIG_SINGLETHREAD,
+    /// Each connection is thread-safe but
+    /// statements within a connection are not.
+    MultiThreaded = sqlite3.SQLITE_CONFIG_MULTITHREAD,
+    /// Full thread safety (lowest performance)
+    Serialized = sqlite3.SQLITE_CONFIG_SERIALIZED
+};
+
+pub fn config(cfg: i32) !void {
+    const rv = sqlite3.sqlite3_config(@intCast(cfg));
+    if (rv != 0) return @"error"(rv);
+}
+
+pub fn initialize() !void {
+    const rv = sqlite3.sqlite3_initialize();
+    if (rv != 0) return @"error"(rv);
+}
+
+pub fn shutdown() !void {
+    const rv = sqlite3.sqlite3_shutdown();
+    if (rv != 0) return @"error"(rv);
+}
 
 pub fn openV2(filename: []const u8, flags: i32) !Database {
     var db: Database = undefined;
@@ -63,16 +90,16 @@ pub const ExecResult = struct {
 
     heap: Allocator,
     offset: usize = 0,
-    result: ArrayList([]Column),
+    result: ArrayList([]ExecResult.Column),
 
     fn create(heap: Allocator) ExecResult {
         return .{
             .heap = heap,
-            .result = ArrayList([]Column).init(heap)
+            .result = ArrayList([]ExecResult.Column).init(heap)
         };
     }
 
-    fn add(self: *ExecResult, columns: []Column) !void {
+    fn add(self: *ExecResult, columns: []ExecResult.Column) !void {
         try self.result.append(columns);
     }
 
@@ -98,7 +125,7 @@ pub const ExecResult = struct {
     }
 
     /// # Iterates the Retrieved Rows
-    pub fn next(self: *ExecResult) ?[]Column {
+    pub fn next(self: *ExecResult) ?[]ExecResult.Column {
         if (self.offset < self.result.items.len) {
             defer self.offset += 1;
             return self.result.items[self.offset];
@@ -125,7 +152,7 @@ pub const ExecResult = struct {
     fn callbackZ(result: *ExecResult, ct: [*c][*c]u8, cn: [*c][*c]u8) !void {
         // List will never be empty
         // `exec()` only invokes callback when a row is retrieved
-        var list = ArrayList(Column).init(result.heap);
+        var list = ArrayList(ExecResult.Column).init(result.heap);
 
         var i: usize = 0;
         while (ct[i] != null) : (i += 1) {
@@ -140,7 +167,11 @@ pub const ExecResult = struct {
 
     /// # Makes a Heap Allocated Column
     /// **WARNING:** Allocated memory must be freed by the caller
-    fn makeColumn(heap: Allocator, name: []const u8, data: []const u8) !Column {
+    fn makeColumn(
+        heap: Allocator,
+        name: []const u8,
+        data: []const u8
+    ) !ExecResult.Column {
         const alloc_name = try heap.alloc(u8, name.len);
         mem.copyForwards(u8, alloc_name, name);
 
@@ -148,6 +179,232 @@ pub const ExecResult = struct {
         mem.copyForwards(u8, alloc_data, data);
 
         return .{.name = alloc_name, .data = alloc_data };
+    }
+};
+
+pub fn prepareV3(db: Database, sql: []const u8) !STMT {
+    var stmt: STMT = undefined;
+
+    var pz_tail: [*c]const u8 = undefined; // this must be long term
+    const flag = sqlite3.SQLITE_PREPARE_PERSISTENT;
+    const rv = sqlite3.sqlite3_prepare_v3(
+        db, sql.ptr, @intCast(sql.len), flag, &stmt, &pz_tail
+    );
+
+    std.debug.print("{?s}\n", .{pz_tail});
+
+    if (rv != 0) return @"error"(rv);
+    return stmt;
+}
+
+//##############################################################################
+//# STMT DATA BINDING ---------------------------------------------------------#
+//##############################################################################
+
+pub const Bind = struct {
+    const DataType = enum { Static, Dynamic };
+
+    const heap_ptr: ?*Allocator = null;
+
+    stmt: STMT,
+
+    /// # Creates a Bind Interface for a Given STMT
+    /// - No resource clean up is required for this initiation
+    pub fn init(heap: Allocator, stmt: STMT) Bind {
+        Bind.heap_ptr.* = &heap;
+        return .{.stmt = stmt};
+    }
+
+    pub fn parameterCount(self: *Bind) i32 {
+        const count = sqlite3.sqlite3_bind_parameter_count(self.stmt);
+        return @intCast(count);
+    }
+
+    pub fn parameterIndex(self: *Bind, name: []const u8) !i32 {
+        const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
+        return if (index == 0) Error.BindParameterNotFound
+        else @intCast(index);
+    }
+
+    /// # Binds **NULL** to Column Data
+    pub fn none(self: *Bind, index: i32) !void {
+        const pos: c_int = @intCast(index);
+        const rv = sqlite3.sqlite3_bind_null(self.stmt, pos);
+        if (rv != 0) return @"error"(rv);
+    }
+
+    pub fn int(self: *Bind, index: i32, value: i32) !void {
+        const pos: c_int = @intCast(index);
+        const val: c_int = @intCast(value);
+        const rv = sqlite3.sqlite3_bind_int(self.stmt, pos, val);
+        if (rv != 0) return @"error"(rv);
+    }
+
+    pub fn int64(self: *Bind, index: i32, value: i64) !void {
+        const pos: c_int = @intCast(index);
+        const val: c_longlong = @intCast(value);
+        const rv = sqlite3.sqlite3_bind_int64(self.stmt, pos, val);
+        if (rv != 0) return @"error"(rv);
+    }
+
+    pub fn double(self: *Bind, index: i32, value: f64) !void {
+        const pos: c_int = @intCast(index);
+        const rv = sqlite3.sqlite3_bind_double(self.stmt, pos, value);
+        if (rv != 0) return @"error"(rv);
+    }
+
+    /// **WARNING:**
+    /// - Caller should not deallocate memory for **Dynamic** data
+    /// - Callback function `free()` will be called automatically!
+    pub fn text(
+        self: *Bind,
+        index: i32,
+        data: []const u8,
+        @"type": DataType
+    ) !void {
+        const pos: c_int = @intCast(index);
+        const len: c_int = @intCast(data.len);
+        const val: *anyopaque = @ptrCast(data);
+        const bindText = sqlite3.sqlite3_bind_text;
+
+        switch (@"type") {
+            .Static => {
+                const static = sqlite3.SQLITE_STATIC;
+                const rv = bindText(self.stmt, pos, val, len, static);
+                if (rv != 0) return @"error"(rv);
+            },
+            .Dynamic => {
+                const rv = bindText(self.stmt, index, val, len, Bind.free);
+                if (rv != 0) return @"error"(rv);
+            }
+        }
+    }
+
+    /// **WARNING:**
+    /// - Caller should not deallocate memory for **Dynamic** data
+    /// - Callback function `free()` will be called automatically!
+    pub fn blob(
+        self: *Bind,
+        index: i32,
+        data: []const u8,
+        @"type": DataType
+    ) !void {
+        const pos: c_int = @intCast(index);
+        const len: c_int = @intCast(data.len);
+        const val: *anyopaque = @ptrCast(data);
+        const bindBlob = sqlite3.sqlite3_bind_blob;
+
+        switch (@"type") {
+            .Static => {
+                const static = sqlite3.SQLITE_STATIC;
+                const rv = bindBlob(self.stmt, pos, val, len, static);
+                if (rv != 0) return @"error"(rv);
+            },
+            .Dynamic => {
+                const rv = bindBlob(self.stmt, index, val, len, Bind.free);
+                if (rv != 0) return @"error"(rv);
+            }
+        }
+    }
+
+    fn free(args: ?*anyopaque) callconv(.c) void {
+        const data: []const u8 = @ptrCast(@alignCast(args));
+        Bind.heap_ptr.?.free(data);
+    }
+};
+
+const Result = enum { None, Row };
+
+pub fn step(stmt: STMT) !Result {
+    const rv = sqlite3.sqlite3_step(stmt);
+    return switch (rv) {
+        sqlite3.SQLITE_DONE => .None,
+        sqlite3.SQLITE_ROW => .Row,
+        else => return @"error"(rv)
+    };
+}
+
+pub fn clearBinding(stmt: STMT) !void {
+    const rv = sqlite3.sqlite3_clear_bindings(stmt);
+    if (rv != 0) return @"error"(rv);
+}
+
+pub fn reset(stmt: STMT) !void {
+    const rv = sqlite3.sqlite3_reset(stmt);
+    if (rv != 0) return @"error"(rv);
+}
+
+pub fn finalize(stmt: STMT) !void {
+    const rv = sqlite3.sqlite3_finalize(stmt);
+    if (rv != 0) return @"error"(rv);
+}
+
+//##############################################################################
+//# STMT DATA RETRIEVAL -------------------------------------------------------#
+//##############################################################################
+
+pub const Column = struct {
+    stmt: STMT,
+
+    const DataType = enum(i32) { Int, Float, Text, Blob, Null, Unknown };
+
+    /// # Creates a Column Interface for a Given STMT
+    /// - No resource clean up is required for this initiation
+    pub fn init(stmt: STMT) Column {
+        return .{.stmt = stmt};
+    }
+
+    pub fn count(self: Column) i32 {
+        return @intCast(sqlite3.sqlite3_column_count(self.stmt));
+    }
+
+    pub fn dataType(self: Column, index: i32) Database {
+        const pos: c_int = @intCast(index);
+        const result = sqlite3.sqlite3_column_type(self.stmt, pos);
+        return switch(result) {
+            sqlite3.SQLITE_INTEGER => .Int,
+            sqlite3.SQLITE_FLOAT => .Float,
+            sqlite3.SQLITE_TEXT => .Text,
+            sqlite3.SQLITE_BLOB => .Blob,
+            sqlite3.SQLITE_NULL => .Blob,
+            else => .Unknown
+        };
+    }
+
+    pub fn bytes(self: Column, index: i32) void {
+        const pos: c_int = @intCast(index);
+        return @intCast(sqlite3.sqlite3_column_bytes(self.stmt, pos));
+    }
+
+    pub fn int(self: Column, index: i32) i32 {
+        const pos: c_int = @intCast(index);
+        return @intCast(sqlite3.sqlite3_column_int(self.stmt, pos));
+    }
+
+    pub fn int64(self: Column, index: i32) i64 {
+        const pos: c_int = @intCast(index);
+        return @intCast(sqlite3.sqlite3_column_int64(self.stmt, pos));
+    }
+
+    pub fn double(self: Column, index: i32) f64 {
+        const pos: c_int = @intCast(index);
+        return sqlite3.sqlite3_column_double(self.stmt, pos);
+    }
+
+    pub fn text(self: Column, index: i32) ?[]const u8 {
+        const pos: c_int = @intCast(index);
+        const result = sqlite3.sqlite3_column_text(self.stmt, pos);
+
+        if (result == null) return null
+        else return mem.span(result);
+    }
+
+    pub fn blob(self: Column, index: i32) ?[]const u8 {
+        const pos: c_int = @intCast(index);
+        const result = sqlite3.sqlite3_column_blob(self.stmt, pos);
+
+        if (result == null) return null
+        else return @ptrCast(@alignCast(result));
     }
 };
 
