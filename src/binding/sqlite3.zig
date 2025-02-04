@@ -14,6 +14,7 @@ const Error = error {
     InterfaceMisuse,
     UnableToExecuteQuery,
     BindParameterNotFound,
+    UnmetConstraint,
     Unknown,
 };
 
@@ -82,6 +83,10 @@ pub fn exec(heap: Allocator, db: Database, sql: []const u8) !ExecResult {
 
     return if (rv != 0) @"error"(rv) else result;
 }
+
+//##############################################################################
+//# EXEC RESULT INTERFACE -----------------------------------------------------#
+//##############################################################################
 
 /// # Retrieves SQL Execution Results
 /// **WARNING:** You must call `destroy()`, when you are done with the result
@@ -191,8 +196,6 @@ pub fn prepareV3(db: Database, sql: []const u8) !STMT {
         db, sql.ptr, @intCast(sql.len), flag, &stmt, &pz_tail
     );
 
-    std.debug.print("{?s}\n", .{pz_tail});
-
     if (rv != 0) return @"error"(rv);
     return stmt;
 }
@@ -264,7 +267,7 @@ pub const Bind = struct {
     ) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-        const val: *anyopaque = @ptrCast(data);
+        const val: [*]const u8 = @ptrCast(data);
         const bindText = sqlite3.sqlite3_bind_text;
 
         switch (@"type") {
@@ -344,21 +347,28 @@ pub fn finalize(stmt: STMT) !void {
 //##############################################################################
 
 pub const Column = struct {
+    heap: Allocator,
     stmt: STMT,
 
-    const DataType = enum(i32) { Int, Float, Text, Blob, Null, Unknown };
+    pub const DataType = enum(i32) { Int, Float, Text, Blob, Null };
 
     /// # Creates a Column Interface for a Given STMT
     /// - No resource clean up is required for this initiation
-    pub fn init(stmt: STMT) Column {
-        return .{.stmt = stmt};
+    pub fn init(heap: Allocator, stmt: STMT) Column {
+        return .{.heap = heap, .stmt = stmt};
     }
 
     pub fn count(self: Column) i32 {
         return @intCast(sqlite3.sqlite3_column_count(self.stmt));
     }
 
-    pub fn dataType(self: Column, index: i32) Database {
+    pub fn name(self: Column, index: i32) []const u8 {
+        const pos: c_int = @intCast(index);
+        const col_name = sqlite3.sqlite3_column_name(self.stmt, pos);
+        return mem.span(col_name);
+    }
+
+    pub fn dataType(self: Column, index: i32) DataType {
         const pos: c_int = @intCast(index);
         const result = sqlite3.sqlite3_column_type(self.stmt, pos);
         return switch(result) {
@@ -366,12 +376,12 @@ pub const Column = struct {
             sqlite3.SQLITE_FLOAT => .Float,
             sqlite3.SQLITE_TEXT => .Text,
             sqlite3.SQLITE_BLOB => .Blob,
-            sqlite3.SQLITE_NULL => .Blob,
-            else => .Unknown
+            sqlite3.SQLITE_NULL => .Null,
+            else => unreachable
         };
     }
 
-    pub fn bytes(self: Column, index: i32) void {
+    pub fn bytes(self: Column, index: i32) i32 {
         const pos: c_int = @intCast(index);
         return @intCast(sqlite3.sqlite3_column_bytes(self.stmt, pos));
     }
@@ -391,20 +401,31 @@ pub const Column = struct {
         return sqlite3.sqlite3_column_double(self.stmt, pos);
     }
 
-    pub fn text(self: Column, index: i32) ?[]const u8 {
+    /// - **WARNING:** Returned value must be freed by the caller
+    pub fn text(self: Column, index: i32) !?[]const u8 {
         const pos: c_int = @intCast(index);
         const result = sqlite3.sqlite3_column_text(self.stmt, pos);
 
-        if (result == null) return null
-        else return mem.span(result);
+        if (result == null) return null;
+
+        const tmp = mem.span(result);
+        const data = try self.heap.alloc(u8, tmp.len);
+        mem.copyForwards(u8, data, tmp);
+        return data;
     }
 
-    pub fn blob(self: Column, index: i32) ?[]const u8 {
+    /// - **WARNING:** Returned value must be freed by the caller
+    pub fn blob(self: Column, index: i32) !?[]const u8 {
         const pos: c_int = @intCast(index);
         const result = sqlite3.sqlite3_column_blob(self.stmt, pos);
 
-        if (result == null) return null
-        else return @ptrCast(@alignCast(result));
+        if (result == null) return null;
+
+        const tmp_ptr: [*c]const u8 = @ptrCast(@alignCast(result));
+        const tmp = mem.span(tmp_ptr);
+        const data = try self.heap.alloc(u8, tmp.len);
+        mem.copyForwards(u8, data, tmp);
+        return data;
     }
 };
 
@@ -414,8 +435,9 @@ fn @"error"(code: c_int) Error {
         sqlite3.SQLITE_ERROR => Error.UnableToExecuteQuery,
         sqlite3.SQLITE_CANTOPEN => Error.UnableToOpen,
         sqlite3.SQLITE_MISUSE => Error.InterfaceMisuse,
+        sqlite3.SQLITE_CONSTRAINT => Error.UnmetConstraint,
         else => {
-            std.log.err("Encountered: {d}\n", .{code});
+            std.log.err("Encountered Code - {d}\n", .{code});
             return Error.Unknown;
         }
     };

@@ -1,7 +1,11 @@
 const std = @import("std");
+const mem = std.mem;
+const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
 const uuid = @import("./uuid.zig");
+
+const types = @import("./types.zig");
 
 const sqlite3 = @import("../binding/sqlite3.zig");
 const STMT = sqlite3.STMT;
@@ -22,7 +26,11 @@ pub fn init(opt: Option) !void {
 }
 
 /// # Destroys SQLite Resources and Configurations
-pub fn deinit() !void { try sqlite3.shutdown(); }
+pub fn deinit() void {
+    sqlite3.shutdown() catch |err| {
+        std.log.err("{s}\n", .{@errorName(err)});
+    };
+}
 
 /// # Open or Creates a Database Instance
 /// - `file_path` - When **null**, creates an in-memory database
@@ -40,27 +48,125 @@ pub fn close(self: *Self) void { sqlite3.closeV2(self.instance); }
 
 /// # Performs One-Step Query Execution
 /// - Convenient wrapper around `prepare()`, `step()`, and `finalize()`
-/// - Use only for non-repetitive SQL statements such as creating table etc.
+/// - Use only for non-repetitive SQL statements such as creating a table
 /// - Avoid when parameter binding or retrieving complex results is required
 ///
 /// **Remarks:**
 /// - The callback function receives the results one row at a time
-/// - All row data retrieve by the `exec()` is in string representation
+/// - All row data retrieve by the `exec()` is in text representation
 /// - In a multiple statement execution, `exec()` does not explicitly tell the
 ///   callback which statement produced a particular row.
 pub fn exec(self: *Self, sql: []const u8) !ExecResult {
     return try sqlite3.exec(self.heap, self.instance, sql);
 }
 
-pub fn prepare(self: *Self, sql: []const u8) !STMT {
-    return try sqlite3.prepareV3(self.instance, sql);
+/// # Compiles SQL Text into Byte-Code
+pub fn prepare(self: *Self, sql: []const u8) !CRUD {
+    const stmt = try sqlite3.prepareV3(self.instance, sql);
+    return CRUD.create(self.heap, stmt);
 }
 
-// Some high level function such as CURD in one and many forms
+/// # Provides Database Interactions
+/// - Supports single statement query (first one)
+/// - In a multi-statement query, other statements are discarded
+///
+/// **WARNING:** You must call `destroy()` at the end to release the STMT
+pub const CRUD = struct {
+    heap: Allocator,
+    stmt: STMT,
+
+    /// # Creates the Interface
+    /// - **Remarks:** For internal use only, by the `Self.prepare()`
+    fn create(heap: Allocator, stmt: STMT) CRUD {
+        return .{.heap = heap, .stmt = stmt };
+    }
+
+    /// # Destroys the Interface
+    pub fn destroy(self: *CRUD) void {
+        sqlite3.finalize(self.stmt) catch |err| {
+            std.log.err("{s}\n", .{@errorName(err)});
+        };
+    }
+
+    /// # Frees Up Allocated Memory Slices
+    /// - Retrieved by read operations - `readOne()` and `readMany()`
+    pub fn free(self: *CRUD, result: anytype) void {
+        switch (@typeInfo(@TypeOf(result))) {
+            .@"struct" => {
+                release(self.heap, result);
+            },
+            .optional => |v| {
+                if (v.child == @TypeOf(null)) return;
+                release(self.heap, result.?);
+            },
+            .pointer => |_| {
+                const slice: @TypeOf(result) = result;
+                defer self.heap.free(slice);
+                for (0..slice.len) |i| release(self.heap, slice[i]);
+            },
+            else => @compileError(
+                "Result must be `struct`, `?struct` or `[]struct`"
+            )
+        }
+    }
+
+    /// # Releases `DataType.Slice` Memories
+    fn release(heap: Allocator, data: anytype) void {
+        const struct_info = @typeInfo(@TypeOf(data)).@"struct";
+        inline for (struct_info.fields) |field| {
+            switch (field.type) {
+                []const u8 => heap.free(@field(data, field.name)),
+                ?[]const u8 => {
+                    if (@field(data, field.name) == null) return;
+                    heap.free(@field(data, field.name).?);
+                },
+                else => {} // NOP
+            }
+        }
+    }
+
+    /// # Retrieves a Single (Record) Query Result
+    /// **Remarks:** For multiple records only the first one is retrieved
+    /// - `T` - A structure that contains all record fields
+    pub fn readOne(self: *CRUD, comptime T: type) !?T {
+        if (try sqlite3.step(self.stmt) == .None) return null;
+
+        var column = sqlite3.Column.init(self.heap, self.stmt);
+        return try types.convert(&column, T);
+    }
+
+    /// # Retrieves Multiple (Records) Query Result
+    /// **Remarks:** Use this when record limits are known. Use `readNext()`
+    /// for progressive retrieval of unknown number of records.
+    ///
+    /// - `T` - A structure that contains all record fields
+    ///
+    /// **WARNING:** Return value must be freed by the caller
+    pub fn readMany(self: *CRUD, comptime T: type) ![]T {
+        var records = ArrayList(T).init(self.heap);
+
+        while (try sqlite3.step(self.stmt) == .Row) {
+            var column = sqlite3.Column.init(self.heap, self.stmt);
+            try records.append(try types.convert(&column, T));
+        }
+
+        return try records.toOwnedSlice();
+    }
+
+    
+};
+
 
 
 
 pub const QueryBuilder = struct {
     // TODO: build complete queries from scratch with step by step function call
     // TODO: Parse and build complete queries for intermediate JSON string
+};
+
+
+// TODO
+// For streaming large binary object from database
+pub const Stream = struct {
+
 };
