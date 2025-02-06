@@ -136,7 +136,7 @@ pub const CRUD = struct {
     /// **Remarks:** For multiple records only the first one is retrieved
     /// - `T` - A structure that contains all record fields
     pub fn readOne(self: *CRUD, comptime T: type) !?T {
-        if (try sqlite3.step(self.stmt) == .None) return null;
+        if (try sqlite3.step(self.stmt) == .Done) return null;
 
         var column = sqlite3.Column.init(self.heap, self.stmt);
         return try types.convertTo(&column, T);
