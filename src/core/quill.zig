@@ -1,5 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
+const debug = std.debug;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
@@ -64,6 +65,12 @@ pub fn exec(self: *Self, sql: []const u8) !ExecResult {
 pub fn prepare(self: *Self, sql: []const u8) !CRUD {
     const stmt = try sqlite3.prepareV3(self.instance, sql);
     return CRUD.create(self.heap, stmt);
+}
+
+/// # Shows Human-Readable Error Message
+/// - Most recent error that occurred on a given database connection
+pub fn errMsg(self: *Self) []const u8 {
+    return sqlite3.errMsg(self.instance);
 }
 
 /// # Provides Database Interactions
@@ -132,7 +139,7 @@ pub const CRUD = struct {
         if (try sqlite3.step(self.stmt) == .None) return null;
 
         var column = sqlite3.Column.init(self.heap, self.stmt);
-        return try types.convert(&column, T);
+        return try types.convertTo(&column, T);
     }
 
     /// # Retrieves Multiple (Records) Query Result
@@ -147,13 +154,29 @@ pub const CRUD = struct {
 
         while (try sqlite3.step(self.stmt) == .Row) {
             var column = sqlite3.Column.init(self.heap, self.stmt);
-            try records.append(try types.convert(&column, T));
+            try records.append(try types.convertTo(&column, T));
         }
 
         return try records.toOwnedSlice();
     }
 
-    
+    // TODO:
+    // pass an initiated structure
+    // auto bind and make the step()
+    pub fn bind(self: *CRUD, record: anytype) !void {
+        var params = sqlite3.Bind.init(&self.heap, self.stmt);
+        try types.convertFrom(&params, record);
+
+        debug.assert(try sqlite3.step(self.stmt) == .Done);
+    }
+
+    // TODO:
+    pub fn bindTransaction() void {
+
+    }
+
+    // update should also use bind?
+
 };
 
 

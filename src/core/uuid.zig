@@ -131,9 +131,9 @@ fn switchU16(v: u16) u16 {
 
 fn hex2hw(hex: u8) Error!u8 {
     return switch (hex) {
-        48...57 => hex - 48,
-        65...70 => hex - 65 + 10,
-        97...102 => hex - 97 + 10,
+        48...57 => hex - 48,       // '0' - '9'
+        65...70 => hex - 65 + 10,  // 'A' - 'F'
+        97...102 => hex - 97 + 10, // 'a' - 'f'
         else => return Error.InvalidHexCharacter
     };
 }
@@ -150,15 +150,15 @@ fn getTimeHiAndVersion(uuid: UUID) u16 {
     return switchU16(@as(u16, @intCast((uuid >> 48) & 0xffff)));
 }
 
-pub fn getClockSeqHiAndReserved(uuid: UUID) u8 {
+fn getClockSeqHiAndReserved(uuid: UUID) u8 {
     return @as(u8, @intCast((uuid >> 64) & 0xff));
 }
 
-pub fn getClockSeqLow(uuid: UUID) u8 {
+fn getClockSeqLow(uuid: UUID) u8 {
     return @as(u8, @intCast((uuid >> 72) & 0xff));
 }
 
-pub fn getNode(uuid: UUID) u48 {
+fn getNode(uuid: UUID) u48 {
     return switchU48(@as(u48, @intCast((uuid >> 80) & 0xffffffffffff)));
 }
 

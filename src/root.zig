@@ -1,25 +1,12 @@
-const std = @import("std");
+//! # SQlite Library Binding
+//! - See documentation at - https://bitlaabquill.web.app/
 
-const Person = struct {
-    name: []const u8,
-    age: u8,
+pub const Quill = @import("./core/quill.zig");
+pub const Types = @import("./core/types.zig");
+pub const Uuid = @import("./core/types.zig");
+
+
+/// # API Bindings for Underlying Libraries
+pub const Api = struct {
+    pub const sqlite3 = @import("./binding/sqlite3.zig");
 };
-
-test "play" {
-    //var person = Person{ .name = "Alice", .age = 25 };
-
-    var person = std.mem.zeroes(Person);
-
-    // Field name as a string
-    // const field_name = "age";
-
-    const struct_info = @typeInfo(Person).@"struct";
-
-    var x: u8 = 30;
-    _ = &x;
-
-    // Set value using @field
-    @field(person, struct_info.fields[1].name) = x;
-
-    std.log.warn("Updated Person: {s}, Age: {}\n", .{ person.name, person.age });
-}

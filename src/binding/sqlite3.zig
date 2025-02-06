@@ -161,8 +161,8 @@ pub const ExecResult = struct {
 
         var i: usize = 0;
         while (ct[i] != null) : (i += 1) {
-            const name: []const u8 = std.mem.span(cn[i]);
-            const data: []const u8 = std.mem.span(ct[i]);
+            const name: []const u8 = mem.span(cn[i]);
+            const data: []const u8 = mem.span(ct[i]);
             try list.append(try makeColumn(result.heap, name, data));
 
         }
@@ -207,14 +207,14 @@ pub fn prepareV3(db: Database, sql: []const u8) !STMT {
 pub const Bind = struct {
     const DataType = enum { Static, Dynamic };
 
-    const heap_ptr: ?*Allocator = null;
+    var heap_ptr: ?*Allocator = null;
 
     stmt: STMT,
 
     /// # Creates a Bind Interface for a Given STMT
     /// - No resource clean up is required for this initiation
-    pub fn init(heap: Allocator, stmt: STMT) Bind {
-        Bind.heap_ptr.* = &heap;
+    pub fn init(heap: *Allocator, stmt: STMT) Bind {
+        Bind.heap_ptr = heap;
         return .{.stmt = stmt};
     }
 
@@ -259,69 +259,40 @@ pub const Bind = struct {
     /// **WARNING:**
     /// - Caller should not deallocate memory for **Dynamic** data
     /// - Callback function `free()` will be called automatically!
-    pub fn text(
-        self: *Bind,
-        index: i32,
-        data: []const u8,
-        @"type": DataType
-    ) !void {
+    pub fn text(self: *Bind, index: i32, data: []const u8) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-        const val: [*]const u8 = @ptrCast(data);
+        const val: [*c]const u8 = @ptrCast(data);
         const bindText = sqlite3.sqlite3_bind_text;
 
-        switch (@"type") {
-            .Static => {
-                const static = sqlite3.SQLITE_STATIC;
-                const rv = bindText(self.stmt, pos, val, len, static);
-                if (rv != 0) return @"error"(rv);
-            },
-            .Dynamic => {
-                const rv = bindText(self.stmt, index, val, len, Bind.free);
-                if (rv != 0) return @"error"(rv);
-            }
-        }
+        const static = sqlite3.SQLITE_STATIC;
+        const rv = bindText(self.stmt, pos, val, len, static);
+        if (rv != 0) return @"error"(rv);
     }
 
     /// **WARNING:**
     /// - Caller should not deallocate memory for **Dynamic** data
     /// - Callback function `free()` will be called automatically!
-    pub fn blob(
-        self: *Bind,
-        index: i32,
-        data: []const u8,
-        @"type": DataType
-    ) !void {
+    pub fn blob(self: *Bind, index: i32, data: []const u8) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-        const val: *anyopaque = @ptrCast(data);
+
+        var tmp = data;
+        const val: *anyopaque = @ptrCast(&tmp);
         const bindBlob = sqlite3.sqlite3_bind_blob;
 
-        switch (@"type") {
-            .Static => {
-                const static = sqlite3.SQLITE_STATIC;
-                const rv = bindBlob(self.stmt, pos, val, len, static);
-                if (rv != 0) return @"error"(rv);
-            },
-            .Dynamic => {
-                const rv = bindBlob(self.stmt, index, val, len, Bind.free);
-                if (rv != 0) return @"error"(rv);
-            }
-        }
-    }
-
-    fn free(args: ?*anyopaque) callconv(.c) void {
-        const data: []const u8 = @ptrCast(@alignCast(args));
-        Bind.heap_ptr.?.free(data);
+        const static = sqlite3.SQLITE_STATIC;
+        const rv = bindBlob(self.stmt, pos, val, len, static);
+        if (rv != 0) return @"error"(rv);
     }
 };
 
-const Result = enum { None, Row };
+const Result = enum { Done, Row };
 
 pub fn step(stmt: STMT) !Result {
     const rv = sqlite3.sqlite3_step(stmt);
     return switch (rv) {
-        sqlite3.SQLITE_DONE => .None,
+        sqlite3.SQLITE_DONE => .Done,
         sqlite3.SQLITE_ROW => .Row,
         else => return @"error"(rv)
     };
@@ -340,6 +311,10 @@ pub fn reset(stmt: STMT) !void {
 pub fn finalize(stmt: STMT) !void {
     const rv = sqlite3.sqlite3_finalize(stmt);
     if (rv != 0) return @"error"(rv);
+}
+
+pub fn errMsg(db: Database) []const u8 {
+    return mem.span(sqlite3.sqlite3_errmsg(db));
 }
 
 //##############################################################################

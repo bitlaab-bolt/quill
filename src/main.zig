@@ -3,21 +3,30 @@ const std = @import("std");
 const quill = @import("./core/quill.zig");
 const Dt = @import("./core/types.zig").DataType;
 
+const uuid = @import("./core/uuid.zig");
 
+
+const Gender = enum { Male, Female };
 
 pub const Data = struct {
     uuid: Dt.Slice,
     name: Dt.Slice,
     balance: Dt.Float,
     age: Dt.Integer,
-    adult: Dt.Integer,
+    adult: Dt.Bool,
     gender: ?Gender,
     bio: ?Dt.Slice,
-
 };
 
-const Gender = enum { Male, Female };
-
+pub const BindData = struct {
+    uuid: Dt.UUID,
+    name: Dt.Text,
+    balance: Dt.Float,
+    age: Dt.Integer,
+    adult: Dt.Bool,
+    gender: ?Gender,
+    bio: Dt.Blob,
+};
 
 
 
@@ -26,98 +35,68 @@ pub fn main() !void {
     defer std.debug.assert(gpa_mem.deinit() == .ok);
     const heap = gpa_mem.allocator();
 
-    // const v = en.Period;
-    // const enum_info = @typeInfo(@TypeOf(v)).@"enum";
-    // std.debug.print("{any}\n", .{enum_info.tag_type});
-    // std.debug.print("{any}\n", .{@Type(v)});
-    // inline for (enum_info.fields) |field| {
-    //     std.debug.print("{s}\n", .{field.name});
-    //     std.debug.print("{}\n", .{field.value});
-    // }
-
-    // const w = foo {.bar = 20, .in = .Cat };
-    // const struct_info = @typeInfo(@TypeOf(w)).@"struct";
-    // inline for (struct_info.fields) |field| {
-    //     std.debug.print("{s}\n", .{@typeName(field.type)});
-    //     std.debug.print("{}\n", .{@sizeOf(field.type)});
-    // }
-
     try quill.init(.Serialized);
     defer quill.deinit();
 
-
     var db = try quill.open(heap, "hello.db");
     defer db.close();
+    errdefer std.debug.print("MYSQL: {s}\n", .{db.errMsg()});
 
-    // # Drops the table
-    // const sql = dropTable();
-    // var result = try db.exec(sql);
-    // defer result.destroy();
 
-    // # Creates the table
-    // const sql = createTable();
-    // var result = try db.exec(sql);
-    // defer result.destroy();
+    // Toggle following blocks to execute specific operations
 
-    // # Inserts data into the table
-    // const sql2 = insertData();
-    // var result2 = try db.exec(sql2);
-    // defer result2.destroy();
+    // try createTableExecExample(&db);
 
-    // # Retrieve data using RAW exec
-    // const sql = \\ SELECT * FROM users;
-    // ;
+    // try dropTableExecExample(&db);
 
-    // var result2 = try db.exec(sql);
-    // defer result2.destroy();
-    // std.debug.print("Count: {}\n", .{result2.count()});
+    // try insertDataExecExample(&db);
 
-    // while (result2.next()) |row| {
-    //     var i: usize = 0;
-    //     while (i < row.len) : (i += 1) {
-    //         std.debug.print("{s}: {s}\n", .{row[i].name, row[i].data});
-    //     }
+    // try readOneExample(&db);
+
+    // try readManyExample(&db);
+
+    // try readUnknownExample(&db);
+
+    // const static = "john";
+    // const dyn = try heap.allocSentinel(u8, 4, 0);
+    // // const dyn = try heap.alloc(u8, 4);
+    // defer heap.free(dyn);
+
+    // std.mem.copyForwards(u8, dyn, static);
+
+    // var v = try db.exec("PRAGMA integrity_check;");
+    // defer v.destroy();
+
+    // while (v.next()) |res| {
+    //     std.debug.print("{s}: {s}\n", .{res[0].name, res[0].data});
     // }
 
-    const sql = \\ SELECT * FROM users;
-    ;
 
-    var crud = try db.prepare(sql);
-    defer crud.destroy();
+    const static = "John Doe";
+    const name = try heap.alloc(u8, static.len);
+    defer heap.free(name);
 
-    // # For single item retrieve
-    // const result = try crud.readOne(Data);
-    // defer crud.free(result);
-    // std.debug.print("Result: {any}\n", .{result.?});
+    std.mem.copyForwards(u8, name, static);
 
-    // # For unknown number item retrieve
-    while (try crud.readOne(Data)) |result| {
-        defer crud.free(result);
-        std.debug.print("Result: {any}\n", .{result});
-    }
+    // Auto UUID field generator
+    const id = uuid.new();
+    const bytes: [16]u8 = @bitCast(@byteSwap(id));
 
-    // # For limited number item retrieve
-    // const results = try crud.readMany(Data);
-    // defer crud.free(results);
+    const data = BindData {
+        .uuid = bytes,
+        .name = .{.data = name},
+        .balance = 12.00,
+        .adult = true,
+        .age = 21,
+        .bio = .{.data = "A brave soul!"},
+        .gender = null
+    };
 
-    // std.debug.print("results {}\n", .{results.len});
-
-    // for (results) |result| {
-    //     std.debug.print("uuid: {}\n", .{result.uuid.len});
-    //     std.debug.print("name: {s}\n", .{result.name});
-    //     std.debug.print("balance: {d}\n", .{result.balance});
-    //     std.debug.print("age: {}\n", .{result.age});
-    //     std.debug.print("adult: {}\n", .{result.adult});
-    //     if (result.bio) |v| {
-    //         std.debug.print("bio: {s}\n", .{v});
-    //     } else {
-    //         std.debug.print("bio: null\n", .{});
-    //     }
-    // }
+    try insertDataExample(&db, data);
 }
 
 
-fn createTable() []const u8 {
+fn createTableExecExample(db: *quill) !void {
     const sql =
     \\  CREATE TABLE IF NOT EXISTS users (
     \\      uuid BLOB PRIMARY KEY,
@@ -130,18 +109,18 @@ fn createTable() []const u8 {
     \\  ) STRICT, WITHOUT ROWID;
     ;
 
-    return sql;
+    var result = try db.exec(sql);
+    result.destroy();
 }
 
-fn dropTable() []const u8 {
-    const sql =
-    \\  DROP TABLE IF EXISTS users;
-    ;
+fn dropTableExecExample(db: *quill) !void {
+    const sql = "DROP TABLE IF EXISTS users;";
 
-    return sql;
+    var result = try db.exec(sql);
+    result.destroy();
 }
 
-fn insertData() []const u8 {
+fn insertDataExecExample(db: *quill) !void {
     const sql =
     \\  INSERT INTO users (uuid, name, balance, age, adult, gender, bio)
     \\  VALUES
@@ -174,9 +153,67 @@ fn insertData() []const u8 {
     \\  );
     ;
 
-    return sql;
+    var result = try db.exec(sql);
+    result.destroy();
 }
 
+
+fn readOneExample(db: *quill) !void {
+    const sql = "SELECT * FROM users;";
+
+    var crud = try db.prepare(sql);
+    defer crud.destroy();
+
+    const result = try crud.readOne(Data);
+    defer crud.free(result);
+
+    std.debug.print("Result: {any}\n", .{result.?});
+}
+
+fn readManyExample(db: *quill) !void {
+    const sql = "SELECT * FROM users;";
+
+    var crud = try db.prepare(sql);
+    defer crud.destroy();
+
+    const results = try crud.readMany(Data);
+    defer crud.free(results);
+
+    std.debug.print("Found {} records\n", .{results.len});
+
+    for (results) |result| {
+        std.debug.print("Result: {any}\n", .{result});
+    }
+}
+
+fn readUnknownExample(db: *quill) !void {
+    const sql = "SELECT * FROM users;";
+
+    var crud = try db.prepare(sql);
+    defer crud.destroy();
+
+    // Break out for early returns
+    while (try crud.readOne(Data)) |result| {
+        defer crud.free(result);
+
+        std.debug.print("Result: {any}\n", .{result});
+    }
+}
+
+fn insertDataExample(db: *quill, record: anytype) !void {
+    const sql =
+    \\  INSERT INTO users (uuid, name, balance, age, adult, gender, bio)
+    \\  VALUES (:uuid, :name, :balance, :age, :adult, :gender, :bio);
+    ;
+
+    var crud = try db.prepare(sql);
+    defer crud.destroy();
+
+    try crud.bind(record);
+}
+
+
+// TODO:
 
 // add new column
 // ALTER TABLE users ADD COLUMN phone TEXT;
