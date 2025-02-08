@@ -1,4 +1,5 @@
 site/
 zig-out/
 .zig-cache/
+hello.db
 .DS_Store

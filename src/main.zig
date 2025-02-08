@@ -45,7 +45,7 @@ pub fn main() !void {
 
     // Toggle following blocks to execute specific operations
 
-    // try createTableExecExample(&db);
+    try createTableExecExample(&db);
 
     // try dropTableExecExample(&db);
 
@@ -80,19 +80,24 @@ pub fn main() !void {
 
     // Auto UUID field generator
     const id = uuid.new();
-    const bytes: [16]u8 = @bitCast(@byteSwap(id));
+    std.debug.print("UUID-v7: {s}\n", .{uuid.toUrn(id)});
+    std.debug.assert(
+        std.mem.eql(u8, &id, &(try uuid.fromUrn(&uuid.toUrn(id))))
+    );
 
     const data = BindData {
-        .uuid = bytes,
+        .uuid = id,
         .name = .{.data = name},
-        .balance = 12.00,
+        .balance = 18.00,
         .adult = true,
-        .age = 21,
+        .age = 5,
         .bio = .{.data = "A brave soul!"},
         .gender = null
     };
 
     try insertDataExample(&db, data);
+
+    try readOneExample(&db);
 }
 
 
@@ -159,7 +164,7 @@ fn insertDataExecExample(db: *quill) !void {
 
 
 fn readOneExample(db: *quill) !void {
-    const sql = "SELECT * FROM users;";
+    const sql = "SELECT * FROM users ORDER BY uuid DESC;";
 
     var crud = try db.prepare(sql);
     defer crud.destroy();
