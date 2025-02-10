@@ -29,6 +29,11 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("libs/include"));
     exe.addCSourceFile(.{.file = b.path("libs/src/sqlite3.c"), .flags = &.{}});
 
+    // Adding package dependency
+    const jsonic = b.dependency("jsonic", .{});
+    pkg.addImport("jsonic", jsonic.module("jsonic"));
+    exe.root_module.addImport("jsonic", jsonic.module("jsonic"));
+
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run the app");

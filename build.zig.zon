@@ -1,7 +1,12 @@
 .{
     .name = "quill",
     .version = "0.1.0",
-    .dependencies = .{},
+    .dependencies = .{
+        .jsonic = .{
+            .url = "https://github.com/bitlaab-bolt/jsonic/archive/refs/tags/v0.1.0.zip",
+            .hash = "12200f68f0749e70964b747654faad32784b31659f71dd3681c42a40cd9ccc11ff53",
+        },
+    },
     .paths = .{
         "docs",
         "libs",

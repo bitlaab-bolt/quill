@@ -3,8 +3,13 @@
 const std = @import("std");
 const mem = std.mem;
 const debug = std.debug;
+const Type = std.builtin.Type;
+const ArrayList = std.ArrayList;
+const Allocator = mem.Allocator;
 
-const uuid = @import("./uuid.zig");
+
+const jsonic = @import("jsonic");
+const Json = jsonic.StaticJson;
 
 const sqlite3 = @import("../binding/sqlite3.zig");
 const Bind = sqlite3.Bind;
@@ -16,34 +21,94 @@ const Error = error {
     MismatchedSize,
     MismatchedValue,
     UnexpectedNullValue,
+    UnexpectedTypeCasting
 };
 
-/// # Supported Record's Field Data Types
-/// - You must use following types for data binding and retrieval
-/// - You can also use `enum` type and / or optional `enum` type as well
+/// # Supported Data Types for a Record Field
+/// - Only use the following types for data binding and retrieval
+/// - All types can be combined as optional except the **Primary Key**
 pub const DataType = struct {
-    pub const UUID = [16]u8;
+    pub const Uuid = [16]u8;
+    pub const Int = i64;
     pub const Bool = bool;
     pub const Float = f64;
-    pub const Integer = i64;
     pub const Slice = []const u8;
 
-    // Only use this type for data binding
-    pub const Text = struct { data: []const u8 };
-    pub const Blob = struct { data: []const u8 };
+    /// # TypeCast from SQlite `Integer`, `Text`, or `Blob` Data
+    /// **WARNING:** Use this type function exclusively for data retrieval
+    /// - `comptime T` - Given type must be an `enum` or a `struct`
+    pub fn Any(comptime T: type) type {
+        switch (@typeInfo(T)) {
+            .@"enum", .@"struct" => return T,
+            else => @compileError("Unsupported Data Type")
+        }
+    }
+
+    const CastKind = enum { Int, Text, Blob };
+
+    /// # TypeCast into SQlite `Integer`, `Text`, or `Blob` Data
+    /// **WARNING:** Use this type function exclusively for data binding
+    /// - `comptime T` - Given type must be an `enum` or a `struct`
+    pub fn CastInto(kind: CastKind, comptime T: type) type {
+        switch (kind) {
+            .Int => {
+                switch (@typeInfo(T)) {
+                    .@"enum" => return struct { int: T },
+                    else => @compileError("Unsupported Type Conversion")
+                }
+            },
+            .Text => {
+                switch (@typeInfo(T)) {
+                    .@"enum", .@"struct" => return struct { text: T },
+                    .pointer => |p| {
+                        constSlice(p);
+                        return struct { text: T };
+                    },
+                    else => @compileError("Unsupported Type Conversion")
+                }
+            },
+            .Blob => {
+                switch (@typeInfo(T)) {
+                    .pointer => |p| {
+                        constSlice(p);
+                        return struct { blob: T };
+                    },
+                    else => @compileError("Unsupported Type Conversion")
+                }
+            }
+        }
+    }
+
+    fn constSlice(ptr: Type.Pointer) void {
+        if (!(ptr.is_const and ptr.size == .slice and ptr.child == u8)) {
+            @compileError("Pointer type must be `[]const u8`");
+        }
+    }
 };
 
-/// # Converts Columns Data from the Given Record Structure
+/// # Converts Field Data from the Given Record Structure
 /// **Remarks:** Intended for internal use only
-pub fn convertFrom(bind: *Bind, record: anytype) !void {
+pub fn convertFrom(
+    heap: Allocator,
+    list: *ArrayList([]const u8),
+    bind: *Bind,
+    record: anytype
+) !void {
     const struct_info = @typeInfo(@TypeOf(record)).@"struct";
     debug.assert(bind.parameterCount() == struct_info.fields.len);
 
     inline for (struct_info.fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);
         switch (field.type) {
-            DataType.UUID => {
+            DataType.Uuid => {
                 try bind.blob(pos, &@field(record, field.name));
+            },
+            DataType.Int => {
+                try bind.int64(pos, @field(record, field.name));
+            },
+            ?DataType.Int => {
+                if (@field(record, field.name) == null) try bind.none(pos)
+                else try bind.int64(pos, @field(record, field.name));
             },
             DataType.Bool => {
                 try fromBool(bind, pos, record, field.name);
@@ -59,42 +124,22 @@ pub fn convertFrom(bind: *Bind, record: anytype) !void {
                 if (@field(record, field.name) == null) try bind.none(pos)
                 else try bind.double(pos, @field(record, field.name));
             },
-            DataType.Integer => {
-                try bind.int64(pos, @field(record, field.name));
-            },
-            ?DataType.Integer => {
-                if (@field(record, field.name) == null) try bind.none(pos)
-                else try bind.int64(pos, @field(record, field.name));
-            },
-            DataType.Text => {
-                try fromText(bind, pos, record, field.name);
-            },
-            ?DataType.Text => {
-                if (@field(record, field.name) == null) try bind.none(pos)
-                else try fromText(bind, pos, record, field.name);
-            },
-            DataType.Blob => {
-                try fromBlob(bind, pos, record, field.name);
-            },
-            ?DataType.Blob => {
-                if (@field(record, field.name) == null) try bind.none(pos)
-                else try fromBlob(bind, pos, record, field.name);
-            },
             else => {
-                // Since enum is an user defined type
-                if (@typeInfo(field.type) == .@"enum") {
-                    const val = @intFromEnum(@field(record, field.name));
-                    try bind.int(pos, val);
+                // Handles Automatic Type Casting
+                if (@typeInfo(field.type) == .@"struct") {
+                    try typeCast(
+                        heap, bind, pos, record, field.name, field.type, list
+                    );
                 } else if (@typeInfo(field.type) == .optional) {
                     if (@field(record, field.name) == null) try bind.none(pos)
                     else {
-                        const val = @intFromEnum(@field(record, field.name).?);
-                        try bind.int(pos, val);
+                        const opt = @typeInfo(field.type).optional;
+                        try typeCast(
+                            heap, bind, pos, record, field.name, opt.child, list
+                        );
                     }
                 } else {
-                    @compileError(
-                        "Field types must be one of - quill.DataType"
-                    );
+                    @compileError("Field type must be one of `quill.DataType`");
                 }
             }
         }
@@ -108,19 +153,48 @@ fn fromBool(bind: *Bind, i: i32, rec: anytype, comptime tag: []const u8) !void {
     }
 }
 
-fn fromText(bind: *Bind, i: i32, rec: anytype, comptime tag: []const u8) !void {
-    const slice_struct = @field(rec, tag);
-    try bind.text(i, @field(slice_struct, "data"));
+/// # User Defined Type Casting
+fn typeCast(
+    heap: Allocator,
+    bind: *Bind,
+    i: i32,
+    rec: anytype,
+    comptime tag: []const u8,
+    comptime T: type,
+    list: *ArrayList([]const u8)
+) !void {
+    const target = @typeInfo(T).@"struct";
+    comptime debug.assert(target.fields.len == 1);
+
+    const child = @field(@field(rec, tag), target.fields[0].name);
+    const info = @typeInfo(@TypeOf(child));
+
+    switch (info) {
+        .@"enum" => {
+            if (@hasField(T, "int")) try bind.int(i, @intFromEnum(child))
+            else if (@hasField(T, "text")) try bind.text(i, @tagName(child))
+            else @compileError("Unexpected Field Name");
+        },
+        .@"struct" => {
+            if (@hasField(T, "text")) {
+                const out = try Json.stringify(heap, child);
+                try bind.text(i, try list.append(out));
+            } else @compileError("Unexpected Field Name");
+        },
+        .pointer => |p| {
+            DataType.constSlice(p);
+
+            if (@hasField(T, "text")) try bind.text(i, child)
+            else if (@hasField(T, "blob")) try bind.blob(i, child)
+            else @compileError("Unexpected Field Name");
+        },
+        else => @compileError("Unexpected Type Conversion")
+    }
 }
 
-fn fromBlob(bind: *Bind, i: i32, rec: anytype, comptime tag: []const u8) !void {
-    const slice_struct = @field(rec, tag);
-    try bind.blob(i, @field(slice_struct, "data"));
-}
-
-/// # Converts Columns Data into the Given Record Structure
+/// # Converts Field Data into the Given Record Structure
 /// **Remarks:** Intended for internal use only
-pub fn convertTo(col: *Column, comptime T: type) !T {
+pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     var row_struct: T = undefined;
     const struct_info = @typeInfo(T).@"struct";
 
@@ -140,6 +214,16 @@ pub fn convertTo(col: *Column, comptime T: type) !T {
                             try toBool(col, i, &row_struct, field.name);
                         }
                     },
+                    DataType.Int => {
+                        try toInt(col, i, &row_struct, field.name);
+                    },
+                    ?DataType.Int => {
+                        if (col.dataType(i) == .Null) {
+                            @field(row_struct, field.name) = null;
+                        } else {
+                            try toInt(col, i, &row_struct, field.name);
+                        }
+                    },
                     DataType.Float => {
                         try toFloat(col, i, &row_struct, field.name);
                     },
@@ -148,16 +232,6 @@ pub fn convertTo(col: *Column, comptime T: type) !T {
                             @field(row_struct, field.name) = null;
                         } else {
                             try toFloat(col, i, &row_struct, field.name);
-                        }
-                    },
-                    DataType.Integer => {
-                        try toInt(col, i, &row_struct, field.name);
-                    },
-                    ?DataType.Integer => {
-                        if (col.dataType(i) == .Null) {
-                            @field(row_struct, field.name) = null;
-                        } else {
-                            try toInt(col, i, &row_struct, field.name);
                         }
                     },
                     DataType.Slice => {
@@ -171,18 +245,16 @@ pub fn convertTo(col: *Column, comptime T: type) !T {
                         }
                     },
                     else => {
-                        // Since enum is an user defined type
+                        // Handles (Any) Type Casting
                         if (@typeInfo(field.type) == .@"enum") {
-                            try toEnum(
-                                field.type, col, i, &row_struct, field.name
-                            );
+                            try toEnum(heap, field.type, col, i, &row_struct, field.name);
+                        } else if (@typeInfo(field.type) == .@"struct") {
+                            try toStruct(heap, field.type, col, i, &row_struct, field.name);
                         } else if (@typeInfo(field.type) == .optional) {
-                            try toOptEnum(
-                                field.type, col, i, &row_struct, field.name
-                            );
+                            try toOptAny(heap, field.type, col, i, &row_struct, field.name);
                         } else {
                             @compileError(
-                                "Field types must be one of - quill.DataType"
+                                "Field type must be one of `quill.DataType`"
                             );
                         }
                     }
@@ -235,6 +307,7 @@ fn toSlice(col: *Column, i: i32, row: anytype, comptime tag: []const u8) !void {
 }
 
 fn toEnum(
+    heap: Allocator,
     comptime T: type,
     col: *Column,
     i: i32,
@@ -245,12 +318,47 @@ fn toEnum(
         const size = @sizeOf(@typeInfo(T).@"enum".tag_type);
         if (size > col.bytes(i)) return Error.MismatchedSize;
         @field(row, tag) = @enumFromInt(col.int(i));
+    } else if (col.dataType(i) == .Text) {
+        const variant = if (try col.text(i)) |data| data
+        else return Error.UnexpectedNullValue;
+
+        defer heap.free(variant);
+        errdefer heap.free(variant);
+
+        inline for (@typeInfo(T).@"enum".fields) |field| {
+            if (mem.eql(u8, field.name, variant)) {
+                @field(row, tag) = @field(T, field.name);
+                return;
+            }
+        }
     } else {
         return Error.MismatchedType;
     }
 }
 
-fn toOptEnum(
+fn toStruct(
+    heap: Allocator,
+    comptime T: type,
+    col: *Column,
+    i: i32,
+    row: anytype,
+    comptime tag: []const u8)
+!void {
+    if (col.dataType(i) == .Text) {
+        const json_str = if (try col.text(i)) |data| data
+        else return Error.UnexpectedNullValue;
+
+        defer heap.free(json_str);
+        errdefer heap.free(json_str);
+
+        @field(row, tag) = try Json.parse(T, heap, json_str);
+    } else {
+        return Error.MismatchedType;
+    }
+}
+
+fn toOptAny(
+    heap: Allocator,
     comptime T: type,
     col: *Column,
     i: i32,
@@ -258,8 +366,13 @@ fn toOptEnum(
     comptime tag: []const u8
 ) !void {
     const u_type = @typeInfo(T).optional;
-    if (@typeInfo(u_type.child) != .@"enum") return Error.MismatchedType;
-
-    if (col.dataType(i) == .Null) @field(row, tag) = null
-    else try toEnum(u_type.child, col, i, row, tag);
+    if (@typeInfo(u_type.child) == .@"enum") {
+        if (col.dataType(i) == .Null) @field(row, tag) = null
+        else try toEnum(heap, u_type.child, col, i, row, tag);
+    } else if (@typeInfo(u_type.child) == .@"struct") {
+        if (col.dataType(i) == .Null) @field(row, tag) = null
+        else try toStruct(heap, u_type.child, col, i, row, tag);
+    } else {
+        return Error.MismatchedType;
+    }
 }

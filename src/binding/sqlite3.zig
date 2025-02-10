@@ -289,7 +289,7 @@ pub const Bind = struct {
 
 const Result = enum { Done, Row };
 
-pub fn step(stmt: STMT) !Result {
+pub fn step(stmt: STMT) Error!Result {
     const rv = sqlite3.sqlite3_step(stmt);
     return switch (rv) {
         sqlite3.SQLITE_DONE => .Done,

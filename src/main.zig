@@ -12,20 +12,20 @@ pub const Data = struct {
     uuid: Dt.Slice,
     name: Dt.Slice,
     balance: Dt.Float,
-    age: Dt.Integer,
+    age: Dt.Int,
     adult: Dt.Bool,
-    gender: ?Gender,
-    bio: ?Dt.Slice,
+    gender: Dt.Any(Gender),
+    bio: ?Dt.Slice
 };
 
 pub const BindData = struct {
-    uuid: Dt.UUID,
-    name: Dt.Text,
+    uuid: Dt.Uuid,
+    name: Dt.CastInto(.Text, []const u8),
     balance: Dt.Float,
-    age: Dt.Integer,
+    age: Dt.Int,
     adult: Dt.Bool,
-    gender: ?Gender,
-    bio: Dt.Blob,
+    gender: Dt.CastInto(.Int, Gender),
+    bio: Dt.CastInto(.Blob, []const u8)
 };
 
 
@@ -40,7 +40,7 @@ pub fn main() !void {
 
     var db = try quill.open(heap, "hello.db");
     defer db.close();
-    errdefer std.debug.print("MYSQL: {s}\n", .{db.errMsg()});
+    errdefer std.debug.print("Error: {s}\n", .{db.errMsg()});
 
 
     // Toggle following blocks to execute specific operations
@@ -87,12 +87,12 @@ pub fn main() !void {
 
     const data = BindData {
         .uuid = id,
-        .name = .{.data = name},
+        .name = .{.text = name},
         .balance = 18.00,
-        .adult = true,
         .age = 5,
-        .bio = .{.data = "A brave soul!"},
-        .gender = null
+        .adult = true,
+        .bio = .{.blob = "A brave soul!"},
+        .gender = .{.int = .Male}
     };
 
     try insertDataExample(&db, data);
@@ -107,7 +107,7 @@ fn createTableExecExample(db: *quill) !void {
     \\      uuid BLOB PRIMARY KEY,
     \\      name TEXT NOT NULL,
     \\      balance REAL,
-    \\      age INTEGER NOT NULL,
+    \\      age INTEGER,
     \\      adult INTEGER NOT NULL,
     \\      gender INTEGER,
     \\      bio BLOB
@@ -164,7 +164,7 @@ fn insertDataExecExample(db: *quill) !void {
 
 
 fn readOneExample(db: *quill) !void {
-    const sql = "SELECT * FROM users ORDER BY uuid DESC;";
+    const sql = "SELECT * FROM users ORDER BY uuid ASC;";
 
     var crud = try db.prepare(sql);
     defer crud.destroy();

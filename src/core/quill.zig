@@ -4,8 +4,6 @@ const debug = std.debug;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
-const uuid = @import("./uuid.zig");
-
 const types = @import("./types.zig");
 
 const sqlite3 = @import("../binding/sqlite3.zig");
@@ -13,6 +11,10 @@ const STMT = sqlite3.STMT;
 const Flag = sqlite3.OpenFlag;
 const Option = sqlite3.Option;
 const ExecResult = sqlite3.ExecResult;
+
+// For quick accessability
+pub const Uuid = @import("./uuid.zig");
+pub const DateTime = @import("./time.zig");
 
 
 heap: Allocator,
@@ -139,7 +141,7 @@ pub const CRUD = struct {
         if (try sqlite3.step(self.stmt) == .Done) return null;
 
         var column = sqlite3.Column.init(self.heap, self.stmt);
-        return try types.convertTo(&column, T);
+        return try types.convertTo(self.heap, &column, T);
     }
 
     /// # Retrieves Multiple (Records) Query Result
@@ -154,7 +156,7 @@ pub const CRUD = struct {
 
         while (try sqlite3.step(self.stmt) == .Row) {
             var column = sqlite3.Column.init(self.heap, self.stmt);
-            try records.append(try types.convertTo(&column, T));
+            try records.append(try types.convertTo(self.heap, &column, T));
         }
 
         return try records.toOwnedSlice();
@@ -164,10 +166,16 @@ pub const CRUD = struct {
     // pass an initiated structure
     // auto bind and make the step()
     pub fn bind(self: *CRUD, record: anytype) !void {
+        var list = ArrayList([]const u8).init(self.heap);
+        defer list.deinit();
+
         var params = sqlite3.Bind.init(&self.heap, self.stmt);
-        try types.convertFrom(&params, record);
+        try types.convertFrom(self.heap, &list, &params, record);
 
         debug.assert(try sqlite3.step(self.stmt) == .Done);
+
+        // Frees allocated JSON string from casting
+        for (list.items) |item| self.heap.free(item);
     }
 
     // TODO:

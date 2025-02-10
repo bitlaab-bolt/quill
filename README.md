@@ -19,3 +19,10 @@ mkdocs serve
 **Platform Support:** As of now, Canine supports **Windows** (x64) and **MacOS** (Apple silicon).
 
 **Documentation:** For quick references and examples see - [Canine Documentation](https://bitlaabcanine.web.app/)
+
+
+# TODO
+
+A. string enum
+
+B. json string
