@@ -4,6 +4,8 @@ const debug = std.debug;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
+const jsonic = @import("jsonic");
+
 const types = @import("./types.zig");
 
 const sqlite3 = @import("../binding/sqlite3.zig");
@@ -109,6 +111,7 @@ pub const CRUD = struct {
                 release(self.heap, result.?);
             },
             .pointer => |_| {
+                // TODO check for const slice
                 const slice: @TypeOf(result) = result;
                 defer self.heap.free(slice);
                 for (0..slice.len) |i| release(self.heap, slice[i]);
@@ -124,12 +127,35 @@ pub const CRUD = struct {
         const struct_info = @typeInfo(@TypeOf(data)).@"struct";
         inline for (struct_info.fields) |field| {
             switch (field.type) {
-                []const u8 => heap.free(@field(data, field.name)),
-                ?[]const u8 => {
-                    if (@field(data, field.name) == null) return;
-                    heap.free(@field(data, field.name).?);
+                []const u8, => {
+                    const val = @field(data, field.name);
+                    heap.free(val);
                 },
-                else => {} // NOP
+                ?[]const u8 => {
+                    if (@field(data, field.name)) |val| heap.free(val);
+                },
+                else => {
+                    const info = @typeInfo(field.type);
+                    switch (info) {
+                        .@"enum" => {
+                            std.debug.print("got enum type\n", .{});
+                        },
+                        .@"struct" => {
+                            std.debug.print("got struct type\n", .{});
+                            try jsonic.free(heap, @field(data, field.name));
+                        },
+                        .optional => |o| {
+                            if (@typeInfo(o.child) == .@"struct") {
+                                if (@field(data, field.name)) |val| {
+                                    try jsonic.free(heap, val);
+                                }
+                            }
+                        },
+                        else => {
+                            // std.debug.print("Auto rel {s}\n", .{field.name});
+                        } // NOP
+                    }
+                }
             }
         }
     }
@@ -163,19 +189,19 @@ pub const CRUD = struct {
     }
 
     // TODO:
-    // pass an initiated structure
-    // auto bind and make the step()
+    // rename to bindData, and bind for binding without step()
     pub fn bind(self: *CRUD, record: anytype) !void {
         var list = ArrayList([]const u8).init(self.heap);
-        defer list.deinit();
+        defer {
+            for (list.items) |item| self.heap.free(item);
+            list.deinit();
+        }
 
         var params = sqlite3.Bind.init(&self.heap, self.stmt);
         try types.convertFrom(self.heap, &list, &params, record);
 
         debug.assert(try sqlite3.step(self.stmt) == .Done);
-
-        // Frees allocated JSON string from casting
-        for (list.items) |item| self.heap.free(item);
+        std.debug.print("Bind len: {}\n", .{list.items.len});
     }
 
     // TODO:

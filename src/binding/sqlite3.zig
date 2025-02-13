@@ -15,7 +15,7 @@ const Error = error {
     UnableToExecuteQuery,
     BindParameterNotFound,
     UnmetConstraint,
-    Unknown,
+    UnknownError,
 };
 
 pub const Database = ?*sqlite3.sqlite3;
@@ -124,12 +124,12 @@ pub const ExecResult = struct {
         self.result.deinit();
     }
 
-    /// # Counts Number of Retrieved Rows
+    /// # Counts Number of Retrieved Records
     pub fn count(self: *const ExecResult) usize {
         return self.result.items.len;
     }
 
-    /// # Iterates the Retrieved Rows
+    /// # Iterates the Retrieved Records
     pub fn next(self: *ExecResult) ?[]ExecResult.Column {
         if (self.offset < self.result.items.len) {
             defer self.offset += 1;
@@ -143,7 +143,7 @@ pub const ExecResult = struct {
         column_texts: [*c][*c]u8,
         column_names: [*c][*c]u8
     ) callconv(.c) c_int {
-        _ = columns; // Shows retrieved column counts
+        _ = columns; // Contains retrieved column counts
 
         const result: *ExecResult = @ptrCast(@alignCast(args));
         callbackZ(result, column_texts, column_names) catch |err| {
@@ -190,7 +190,10 @@ pub const ExecResult = struct {
 pub fn prepareV3(db: Database, sql: []const u8) !STMT {
     var stmt: STMT = undefined;
 
-    var pz_tail: [*c]const u8 = undefined; // this must be long term
+    // Contains the next statement for a multi-statement SQL
+    // `pz_tail` must have a long term lifetime when implemented
+    // Currently not being used due to single statement workflow
+    var pz_tail: [*c]const u8 = undefined;
     const flag = sqlite3.SQLITE_PREPARE_PERSISTENT;
     const rv = sqlite3.sqlite3_prepare_v3(
         db, sql.ptr, @intCast(sql.len), flag, &stmt, &pz_tail
@@ -256,9 +259,6 @@ pub const Bind = struct {
         if (rv != 0) return @"error"(rv);
     }
 
-    /// **WARNING:**
-    /// - Caller should not deallocate memory for **Dynamic** data
-    /// - Callback function `free()` will be called automatically!
     pub fn text(self: *Bind, index: i32, data: []const u8) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
@@ -270,15 +270,10 @@ pub const Bind = struct {
         if (rv != 0) return @"error"(rv);
     }
 
-    /// **WARNING:**
-    /// - Caller should not deallocate memory for **Dynamic** data
-    /// - Callback function `free()` will be called automatically!
     pub fn blob(self: *Bind, index: i32, data: []const u8) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-
-        var tmp = data;
-        const val: *anyopaque = @ptrCast(&tmp);
+        const val: ?*const anyopaque = @ptrCast(data.ptr);
         const bindBlob = sqlite3.sqlite3_bind_blob;
 
         const static = sqlite3.SQLITE_STATIC;
@@ -292,8 +287,8 @@ const Result = enum { Done, Row };
 pub fn step(stmt: STMT) Error!Result {
     const rv = sqlite3.sqlite3_step(stmt);
     return switch (rv) {
-        sqlite3.SQLITE_DONE => .Done,
         sqlite3.SQLITE_ROW => .Row,
+        sqlite3.SQLITE_DONE => .Done,
         else => return @"error"(rv)
     };
 }
@@ -393,11 +388,12 @@ pub const Column = struct {
     pub fn blob(self: Column, index: i32) !?[]const u8 {
         const pos: c_int = @intCast(index);
         const result = sqlite3.sqlite3_column_blob(self.stmt, pos);
+        const len = sqlite3.sqlite3_column_bytes(self.stmt, pos);
 
         if (result == null) return null;
 
-        const tmp_ptr: [*c]const u8 = @ptrCast(@alignCast(result));
-        const tmp = mem.span(tmp_ptr);
+        const tmp_ptr: [*]const u8 = @ptrCast(result);
+        const tmp = tmp_ptr[0..@as(usize, @intCast(len))];
         const data = try self.heap.alloc(u8, tmp.len);
         mem.copyForwards(u8, data, tmp);
         return data;
@@ -413,7 +409,7 @@ fn @"error"(code: c_int) Error {
         sqlite3.SQLITE_CONSTRAINT => Error.UnmetConstraint,
         else => {
             std.log.err("Encountered Code - {d}\n", .{code});
-            return Error.Unknown;
+            return Error.UnknownError;
         }
     };
 }

@@ -7,7 +7,6 @@ const Type = std.builtin.Type;
 const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
-
 const jsonic = @import("jsonic");
 const Json = jsonic.StaticJson;
 
@@ -28,13 +27,12 @@ const Error = error {
 /// - Only use the following types for data binding and retrieval
 /// - All types can be combined as optional except the **Primary Key**
 pub const DataType = struct {
-    pub const Uuid = [16]u8;
     pub const Int = i64;
     pub const Bool = bool;
     pub const Float = f64;
     pub const Slice = []const u8;
 
-    /// # TypeCast from SQlite `Integer`, `Text`, or `Blob` Data
+    /// # TypeCasts from SQlite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data retrieval
     /// - `comptime T` - Given type must be an `enum` or a `struct`
     pub fn Any(comptime T: type) type {
@@ -46,7 +44,7 @@ pub const DataType = struct {
 
     const CastKind = enum { Int, Text, Blob };
 
-    /// # TypeCast into SQlite `Integer`, `Text`, or `Blob` Data
+    /// # TypeCasts into SQlite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data binding
     /// - `comptime T` - Given type must be an `enum` or a `struct`
     pub fn CastInto(kind: CastKind, comptime T: type) type {
@@ -94,101 +92,88 @@ pub fn convertFrom(
     bind: *Bind,
     record: anytype
 ) !void {
-    const struct_info = @typeInfo(@TypeOf(record)).@"struct";
-    debug.assert(bind.parameterCount() == struct_info.fields.len);
+    const info = @typeInfo(@TypeOf(record)).@"struct";
+    debug.assert(bind.parameterCount() == info.fields.len);
 
-    inline for (struct_info.fields) |field| {
+    inline for (info.fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);
-        switch (field.type) {
-            DataType.Uuid => {
-                try bind.blob(pos, &@field(record, field.name));
+        const value = @field(record, field.name);
+
+        switch (@typeInfo(field.type)) {
+            .optional => |_| {
+                if (value == null) try bind.none(pos)
+                else try typeCast(heap, bind, pos, value.?, list);
             },
-            DataType.Int => {
-                try bind.int64(pos, @field(record, field.name));
-            },
-            ?DataType.Int => {
-                if (@field(record, field.name) == null) try bind.none(pos)
-                else try bind.int64(pos, @field(record, field.name));
-            },
-            DataType.Bool => {
-                try fromBool(bind, pos, record, field.name);
-            },
-            ?DataType.Bool => {
-                if (@field(record, field.name) == null) try bind.none(pos)
-                else try fromBool(bind, pos, record, field.name);
-            },
-            DataType.Float => {
-               try bind.double(pos, @field(record, field.name));
-            },
-            ?DataType.Float => {
-                if (@field(record, field.name) == null) try bind.none(pos)
-                else try bind.double(pos, @field(record, field.name));
-            },
-            else => {
-                // Handles Automatic Type Casting
-                if (@typeInfo(field.type) == .@"struct") {
-                    try typeCast(
-                        heap, bind, pos, record, field.name, field.type, list
-                    );
-                } else if (@typeInfo(field.type) == .optional) {
-                    if (@field(record, field.name) == null) try bind.none(pos)
-                    else {
-                        const opt = @typeInfo(field.type).optional;
-                        try typeCast(
-                            heap, bind, pos, record, field.name, opt.child, list
-                        );
-                    }
-                } else {
-                    @compileError("Field type must be one of `quill.DataType`");
-                }
-            }
+            else => try typeCast(heap, bind, pos, value, list)
         }
     }
 }
 
-fn fromBool(bind: *Bind, i: i32, rec: anytype, comptime tag: []const u8) !void {
-    switch (@field(rec, tag)) {
-        true => try bind.int(i, 1),
-        false => try bind.int(i, 0)
-    }
-}
-
-/// # User Defined Type Casting
+/// # Casts Scaler and Complex (user defined) Types
 fn typeCast(
     heap: Allocator,
     bind: *Bind,
     i: i32,
-    rec: anytype,
-    comptime tag: []const u8,
-    comptime T: type,
-    list: *ArrayList([]const u8)
+    value: anytype,
+    list: *ArrayList([]const u8),
 ) !void {
-    const target = @typeInfo(T).@"struct";
-    comptime debug.assert(target.fields.len == 1);
+    const T = @TypeOf(value);
+    switch (@typeInfo(T)) {
+        .@"struct" => |s| {
+            comptime debug.assert(s.fields.len == 1);
+            const child = @field(value, s.fields[0].name);
+            const info = @typeInfo(@TypeOf(child));
 
-    const child = @field(@field(rec, tag), target.fields[0].name);
-    const info = @typeInfo(@TypeOf(child));
+            switch (info) {
+                .@"enum" => {
+                    if (@hasField(T, "int")) {
+                        try bind.int(i, @intFromEnum(child));
+                    } else if (@hasField(T, "text")) {
+                        try bind.text(i, @tagName(child));
+                    } else {
+                        @compileError("Unexpected Field Name");
+                    }
+                },
+                .@"struct" => {
+                    if (@hasField(T, "text")) {
+                        const out = try Json.stringify(heap, child);
+                        try list.append(out);
+                        try bind.text(i, out);
+                    } else {
+                        @compileError("Unexpected Field Name");
+                    }
+                },
+                .pointer => |p| {
+                    DataType.constSlice(p);
 
-    switch (info) {
-        .@"enum" => {
-            if (@hasField(T, "int")) try bind.int(i, @intFromEnum(child))
-            else if (@hasField(T, "text")) try bind.text(i, @tagName(child))
-            else @compileError("Unexpected Field Name");
+                    if (@hasField(T, "text")) try bind.text(i, child)
+                    else if (@hasField(T, "blob")) try bind.blob(i, child)
+                    else @compileError("Unexpected Field Name");
+                },
+                else => {
+                    @compileError("Unexpected Type Conversion");
+                }
+            }
         },
-        .@"struct" => {
-            if (@hasField(T, "text")) {
-                const out = try Json.stringify(heap, child);
-                try bind.text(i, try list.append(out));
-            } else @compileError("Unexpected Field Name");
-        },
-        .pointer => |p| {
-            DataType.constSlice(p);
-
-            if (@hasField(T, "text")) try bind.text(i, child)
-            else if (@hasField(T, "blob")) try bind.blob(i, child)
-            else @compileError("Unexpected Field Name");
-        },
-        else => @compileError("Unexpected Type Conversion")
+        else => {
+            switch (T) {
+                DataType.Int => {
+                    try bind.int64(i, value);
+                },
+                DataType.Bool => {
+                    switch (value) {
+                        true => try bind.int(i, 1),
+                        false => try bind.int(i, 0)
+                    }
+                },
+                DataType.Float => {
+                    try bind.double(i, value);
+                },
+                else => {
+                    @compileError("Field type must be one of `quill.DataType`");
+                }
+            }
+        }
     }
 }
 
@@ -269,7 +254,6 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
 fn toBool(col: *Column, i: i32, row: anytype, comptime tag: []const u8) !void {
     if (col.dataType(i) == .Int) {
         if (col.bytes(i) != 1) return Error.MismatchedSize;
-
         switch (col.int(i)) {
             0 => @field(row, tag) = false,
             1 => @field(row, tag) = true,
@@ -351,7 +335,8 @@ fn toStruct(
         defer heap.free(json_str);
         errdefer heap.free(json_str);
 
-        @field(row, tag) = try Json.parse(T, heap, json_str);
+        const data_struct = try Json.parse(T, heap, json_str);
+        @field(row, tag) = data_struct;
     } else {
         return Error.MismatchedType;
     }

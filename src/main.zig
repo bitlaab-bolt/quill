@@ -3,31 +3,52 @@ const std = @import("std");
 const quill = @import("./core/quill.zig");
 const Dt = @import("./core/types.zig").DataType;
 
-const uuid = @import("./core/uuid.zig");
-
 
 const Gender = enum { Male, Female };
+
+const Status = enum { Single, Married };
+
+const Social = struct { fb: []const u8, yt: []const u8 };
 
 pub const Data = struct {
     uuid: Dt.Slice,
     name: Dt.Slice,
+    name_opt: ?Dt.Slice,
     balance: Dt.Float,
+    balance_opt: ?Dt.Float,
     age: Dt.Int,
+    age_opt: ?Dt.Int,
     adult: Dt.Bool,
+    adult_opt: ?Dt.Bool,
     gender: Dt.Any(Gender),
-    bio: ?Dt.Slice
+    gender_opt: ?Dt.Any(Gender),
+    status: Dt.Any(Status),
+    status_opt: ?Dt.Any(Status),
+    bio: Dt.Slice,
+    bio_opt: ?Dt.Slice,
+    social: Dt.Any(Social),
+    social_opt: ?Dt.Any(Social)
 };
 
 pub const BindData = struct {
-    uuid: Dt.Uuid,
+    uuid: Dt.CastInto(.Blob, []const u8),
     name: Dt.CastInto(.Text, []const u8),
+    name_opt: ?Dt.CastInto(.Text, []const u8),
     balance: Dt.Float,
+    balance_opt: ?Dt.Float,
     age: Dt.Int,
+    age_opt: ?Dt.Int,
     adult: Dt.Bool,
+    adult_opt: ?Dt.Bool,
     gender: Dt.CastInto(.Int, Gender),
-    bio: Dt.CastInto(.Blob, []const u8)
+    gender_opt: ?Dt.CastInto(.Int, Gender),
+    status: Dt.CastInto(.Text, Status),
+    status_opt: ?Dt.CastInto(.Text, Status),
+    bio: Dt.CastInto(.Blob, []const u8),
+    bio_opt: ?Dt.CastInto(.Blob, []const u8),
+    social: Dt.CastInto(.Text, Social),
+    social_opt: ?Dt.CastInto(.Text, Social)
 };
-
 
 
 pub fn main() !void {
@@ -76,23 +97,38 @@ pub fn main() !void {
     const name = try heap.alloc(u8, static.len);
     defer heap.free(name);
 
+    const static2 = "John Doe";
+    const name2 = try heap.alloc(u8, static2.len);
+    defer heap.free(name2);
+
     std.mem.copyForwards(u8, name, static);
 
     // Auto UUID field generator
-    const id = uuid.new();
-    std.debug.print("UUID-v7: {s}\n", .{uuid.toUrn(id)});
+    const id = quill.Uuid.new();
+    std.debug.print("UUID-v7: {any}\n", .{&id});
+    std.debug.print("UUID-v7: {s}\n", .{try quill.Uuid.toUrn(&id)});
     std.debug.assert(
-        std.mem.eql(u8, &id, &(try uuid.fromUrn(&uuid.toUrn(id))))
+        std.mem.eql(u8, &id, &(try quill.Uuid.fromUrn(&(try quill.Uuid.toUrn(&id)))))
     );
 
     const data = BindData {
-        .uuid = id,
+        .uuid = .{.blob = &id},
         .name = .{.text = name},
+        .name_opt = null,
         .balance = 18.00,
+        .balance_opt = null,
         .age = 5,
+        .age_opt = null,
         .adult = true,
-        .bio = .{.blob = "A brave soul!"},
-        .gender = .{.int = .Male}
+        .adult_opt = null,
+        .gender = .{.int = .Male},
+        .gender_opt = null,
+        .status = .{.text = .Married},
+        .status_opt = null,
+        .bio = .{.blob = name2},
+        .bio_opt = null,
+        .social = .{.text = .{.fb = "facebook", .yt = "youtube"}},
+        .social_opt = .{.text = .{.fb = "facebook", .yt = "youtube"}}
     };
 
     try insertDataExample(&db, data);
@@ -106,11 +142,21 @@ fn createTableExecExample(db: *quill) !void {
     \\  CREATE TABLE IF NOT EXISTS users (
     \\      uuid BLOB PRIMARY KEY,
     \\      name TEXT NOT NULL,
-    \\      balance REAL,
-    \\      age INTEGER,
+    \\      name_opt TEXT,
+    \\      balance REAL NOT NULL,
+    \\      balance_opt REAL,
+    \\      age INTEGER NOT NULL,
+    \\      age_opt INTEGER,
     \\      adult INTEGER NOT NULL,
-    \\      gender INTEGER,
-    \\      bio BLOB
+    \\      adult_opt INTEGER,
+    \\      gender INTEGER NOT NULL,
+    \\      gender_opt INTEGER,
+    \\      status TEXT NOT NULL,
+    \\      status_opt TEXT,
+    \\      bio BLOB NOT NULL,
+    \\      bio_opt BLOB,
+    \\      social TEXT NOT NULL,
+    \\      social_opt TEXT
     \\  ) STRICT, WITHOUT ROWID;
     ;
 
@@ -164,7 +210,7 @@ fn insertDataExecExample(db: *quill) !void {
 
 
 fn readOneExample(db: *quill) !void {
-    const sql = "SELECT * FROM users ORDER BY uuid ASC;";
+    const sql = "SELECT * FROM users ORDER BY uuid DESC;";
 
     var crud = try db.prepare(sql);
     defer crud.destroy();
@@ -173,6 +219,12 @@ fn readOneExample(db: *quill) !void {
     defer crud.free(result);
 
     std.debug.print("Result: {any}\n", .{result.?});
+
+    std.debug.print("Type of {any}\n", .{@TypeOf(result.?.bio)});
+
+    const urn = try quill.Uuid.toUrn(result.?.uuid);
+    std.debug.print("UUID-v7: {any}\n", .{result.?.uuid});
+    std.debug.print("UUID-v7: {s}\n", .{&urn});
 }
 
 fn readManyExample(db: *quill) !void {
@@ -207,8 +259,16 @@ fn readUnknownExample(db: *quill) !void {
 
 fn insertDataExample(db: *quill, record: anytype) !void {
     const sql =
-    \\  INSERT INTO users (uuid, name, balance, age, adult, gender, bio)
-    \\  VALUES (:uuid, :name, :balance, :age, :adult, :gender, :bio);
+    \\  INSERT INTO users (
+    \\      uuid, name, name_opt, balance, balance_opt, age, age_opt,
+    \\      adult, adult_opt, gender, gender_opt, status, status_opt,
+    \\      bio, bio_opt, social, social_opt
+    \\  )
+    \\  VALUES (
+    \\      :uuid, :name, :name_opt, :balance, :balance_opt, :age, :age_opt,
+    \\      :adult, :adult_opt, :gender, :gender_opt, :status, :status_opt,
+    \\      :bio, :bio_opt, :social, :social_opt
+    \\  );
     ;
 
     var crud = try db.prepare(sql);

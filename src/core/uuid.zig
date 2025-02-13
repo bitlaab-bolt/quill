@@ -15,7 +15,7 @@ const crypto = std.crypto;
 const testing = std.testing;
 
 
-const Error = error { MalformedUrnString, InvalidHexCharacter };
+const Error = error { InvalidLength, MalformedUrnString, InvalidHexCharacter };
 
 /// # Universally Unique IDentifier
 /// - A UUID is 128 bits long, and unique across space and time (RFC4122)
@@ -67,7 +67,9 @@ pub fn new() UUID {
 
 /// # Returns a String Representation of the Given UUID
 /// - e.g., - `0194E5A9-DDDF-7D69-AE47-52193D232919`
-pub fn toUrn(uuid: UUID) URN {
+pub fn toUrn(uuid: []const u8) Error!URN {
+    if (uuid.len != 16) return Error.InvalidLength;
+
     var urn: URN = undefined;
     _ = fmt.bufPrint(&urn, "{X:0>2}{X:0>2}{X:0>2}{X:0>2}-{X:0>2}{X:0>2}-{X:0>2}{X:0>2}-{X:0>2}{X:0>2}-{X:0>2}{X:0>2}{X:0>2}{X:0>2}{X:0>2}{X:0>2}",
     .{
@@ -112,7 +114,7 @@ fn hexToByte(char: u8) Error!u8 {
 test "uuid to urn" {
     const uuid: UUID = [_]u8{1, 148, 230, 23, 37, 15, 113, 145, 154, 165, 150, 179, 245, 6, 194, 11};
 
-    const urn = toUrn(uuid);
+    const urn = try toUrn(&uuid);
     try testing.expectEqualSlices(
         u8, "0194E617-250F-7191-9AA5-96B3F506C20B", urn[0..]
     );
@@ -129,7 +131,7 @@ test "urn to uuid" {
 test "urn full circle" {
     const urn = "0194E617-250F-7191-9AA5-96B3F506C20B";
     const uuid = try fromUrn(urn);
-    const urn_delta = toUrn(uuid);
+    const urn_delta = try toUrn(&uuid);
 
     try std.testing.expectEqualStrings(urn, &urn_delta);
 }
