@@ -205,7 +205,7 @@ pub const CRUD = struct {
 
     /// # Binds Params Data and then Executes a SQL Statement
     /// `callback` - Captures execution result when not **NULL**
-    pub fn exec(self: *CRUD, record: anytype, callback: ExecCallback) !void {
+    pub fn exec(self: *CRUD, record: anytype, callback: ?ExecCallback) !void {
         var list = ArrayList([]const u8).init(self.heap);
         defer {
             for (list.items) |item| self.heap.free(item);
