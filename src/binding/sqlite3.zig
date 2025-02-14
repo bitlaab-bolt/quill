@@ -12,6 +12,7 @@ const sqlite3 = @cImport({
 const Error = error {
     UnableToOpen,
     InterfaceMisuse,
+    ConnectionIsBusy,
     UnableToExecuteQuery,
     BindParameterNotFound,
     UnmetConstraint,
@@ -193,6 +194,7 @@ pub fn prepareV3(db: Database, sql: []const u8) !STMT {
     // Contains the next statement for a multi-statement SQL
     // `pz_tail` must have a long term lifetime when implemented
     // Currently not being used due to single statement workflow
+    // Will be needed on a single-shot transaction for bulk write
     var pz_tail: [*c]const u8 = undefined;
     const flag = sqlite3.SQLITE_PREPARE_PERSISTENT;
     const rv = sqlite3.sqlite3_prepare_v3(
@@ -282,7 +284,7 @@ pub const Bind = struct {
     }
 };
 
-const Result = enum { Done, Row };
+pub const Result = enum { Done, Row };
 
 pub fn step(stmt: STMT) Error!Result {
     const rv = sqlite3.sqlite3_step(stmt);
@@ -404,6 +406,7 @@ pub const Column = struct {
 fn @"error"(code: c_int) Error {
     return switch (code) {
         sqlite3.SQLITE_ERROR => Error.UnableToExecuteQuery,
+        sqlite3.SQLITE_BUSY => Error.ConnectionIsBusy,
         sqlite3.SQLITE_CANTOPEN => Error.UnableToOpen,
         sqlite3.SQLITE_MISUSE => Error.InterfaceMisuse,
         sqlite3.SQLITE_CONSTRAINT => Error.UnmetConstraint,

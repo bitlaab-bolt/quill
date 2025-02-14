@@ -220,8 +220,6 @@ fn readOneExample(db: *quill) !void {
 
     std.debug.print("Result: {any}\n", .{result.?});
 
-    std.debug.print("Type of {any}\n", .{@TypeOf(result.?.bio)});
-
     const urn = try quill.Uuid.toUrn(result.?.uuid);
     std.debug.print("UUID-v7: {any}\n", .{result.?.uuid});
     std.debug.print("UUID-v7: {s}\n", .{&urn});

@@ -29,6 +29,13 @@ pub fn build(b: *std.Build) void {
     exe.addIncludePath(b.path("libs/include"));
     exe.addCSourceFile(.{.file = b.path("libs/src/sqlite3.c"), .flags = &.{}});
 
+    // Adding cross-platform dependency
+    switch (target.query.os_tag orelse builtin.os.tag) {
+        .macos => {},
+        .windows => exe.linkLibC(),
+        else => @panic("Codebase is not tailored for this platform!")
+    }
+
     // Adding package dependency
     const jsonic = b.dependency("jsonic", .{});
     pkg.addImport("jsonic", jsonic.module("jsonic"));

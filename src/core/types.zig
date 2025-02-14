@@ -19,6 +19,7 @@ const Error = error {
     MismatchedType,
     MismatchedSize,
     MismatchedValue,
+    MismatchedFields,
     UnexpectedNullValue,
     UnexpectedTypeCasting
 };
@@ -180,184 +181,139 @@ fn typeCast(
 /// # Converts Field Data into the Given Record Structure
 /// **Remarks:** Intended for internal use only
 pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
-    var row_struct: T = undefined;
-    const struct_info = @typeInfo(T).@"struct";
+    var dest: T = undefined;
+    const fields = @typeInfo(T).@"struct".fields;
+
+    if (!matchRecord(col, fields)) return Error.MismatchedFields;
 
     for (0..@as(usize, @intCast(col.count()))) |index| {
         const i: i32 = @intCast(index);
-
-        inline for (struct_info.fields) |field| {
+        inline for (fields) |field| {
             if (mem.eql(u8, col.name(i), field.name[0..])) {
-                switch (field.type) {
-                    DataType.Bool => {
-                        try toBool(col, i, &row_struct, field.name);
-                    },
-                    ?DataType.Bool => {
+                switch (@typeInfo(field.type)) {
+                    .optional => |o| {
                         if (col.dataType(i) == .Null) {
-                            @field(row_struct, field.name) = null;
+                            @field(dest, field.name) = null;
                         } else {
-                            try toBool(col, i, &row_struct, field.name);
-                        }
-                    },
-                    DataType.Int => {
-                        try toInt(col, i, &row_struct, field.name);
-                    },
-                    ?DataType.Int => {
-                        if (col.dataType(i) == .Null) {
-                            @field(row_struct, field.name) = null;
-                        } else {
-                            try toInt(col, i, &row_struct, field.name);
-                        }
-                    },
-                    DataType.Float => {
-                        try toFloat(col, i, &row_struct, field.name);
-                    },
-                    ?DataType.Float => {
-                        if (col.dataType(i) == .Null) {
-                            @field(row_struct, field.name) = null;
-                        } else {
-                            try toFloat(col, i, &row_struct, field.name);
-                        }
-                    },
-                    DataType.Slice => {
-                        try toSlice(col, i, &row_struct, field.name);
-                    },
-                    ?DataType.Slice => {
-                        if (col.dataType(i) == .Null) {
-                            @field(row_struct, field.name) = null;
-                        } else {
-                            try toSlice(col, i, &row_struct, field.name);
+                            try typeConversion(heap, col, i, &dest, o.child, field.name);
                         }
                     },
                     else => {
-                        // Handles (Any) Type Casting
-                        if (@typeInfo(field.type) == .@"enum") {
-                            try toEnum(heap, field.type, col, i, &row_struct, field.name);
-                        } else if (@typeInfo(field.type) == .@"struct") {
-                            try toStruct(heap, field.type, col, i, &row_struct, field.name);
-                        } else if (@typeInfo(field.type) == .optional) {
-                            try toOptAny(heap, field.type, col, i, &row_struct, field.name);
-                        } else {
-                            @compileError(
-                                "Field type must be one of `quill.DataType`"
-                            );
-                        }
+                        try typeConversion(heap, col, i, &dest, field.type, field.name);
                     }
                 }
             }
         }
     }
 
-    return row_struct;
+    return dest;
 }
 
-fn toBool(col: *Column, i: i32, row: anytype, comptime tag: []const u8) !void {
-    if (col.dataType(i) == .Int) {
-        if (col.bytes(i) != 1) return Error.MismatchedSize;
-        switch (col.int(i)) {
-            0 => @field(row, tag) = false,
-            1 => @field(row, tag) = true,
-            else => return Error.MismatchedValue
+/// # Cross Checks Column and Structure Fields
+fn matchRecord(col: *Column, fields: []const Type.StructField) bool {
+    if (fields.len != col.count()) return false;
+
+    var count: i32 = 0;
+    for (0..@as(usize, @intCast(col.count()))) |index| {
+        const i: i32 = @intCast(index);
+        inline for (fields) |field| {
+            if (mem.eql(u8, col.name(i), field.name[0..])) count += 1;
         }
-    } else {
-        return Error.MismatchedType;
     }
+
+    return if (count == col.count()) true else false;
 }
 
-fn toFloat(col: *Column, i: i32, row: anytype, comptime tag: []const u8) !void {
-    if (col.dataType(i) == .Float) @field(row, tag) = col.double(i)
-    else return Error.MismatchedType;
-}
-
-fn toInt(col: *Column, i: i32, row: anytype, comptime tag: []const u8) !void {
-    if (col.dataType(i) == .Int) {
-        if (col.bytes(i) <= 4) @field(row, tag) = col.int(i)
-        else @field(row, tag) = col.int64(i);
-    } else {
-        return Error.MismatchedType;
-    }
-}
-
-fn toSlice(col: *Column, i: i32, row: anytype, comptime tag: []const u8) !void {
-    if (col.dataType(i) == .Text) {
-        if (try col.text(i)) |data| @field(row, tag) = data
-        else return Error.UnexpectedNullValue;
-    } else if (col.dataType(i) == .Blob) {
-        if (try col.blob(i)) |data| @field(row, tag) = data
-        else return Error.UnexpectedNullValue;
-    } else {
-        return Error.MismatchedType;
-    }
-}
-
-fn toEnum(
+/// # Converts Scaler and Complex (user defined) Types
+fn typeConversion(
     heap: Allocator,
-    comptime T: type,
     col: *Column,
     i: i32,
-    row: anytype,
+    rec: anytype,
+    comptime T: type,
     comptime tag: []const u8
 ) !void {
-    if (col.dataType(i) == .Int) {
-        const size = @sizeOf(@typeInfo(T).@"enum".tag_type);
-        if (size > col.bytes(i)) return Error.MismatchedSize;
-        @field(row, tag) = @enumFromInt(col.int(i));
-    } else if (col.dataType(i) == .Text) {
-        const variant = if (try col.text(i)) |data| data
-        else return Error.UnexpectedNullValue;
+    switch (@typeInfo(T)) {
+        .@"struct" => {
+            if (col.dataType(i) == .Text) {
+                const json_str = if (try col.text(i)) |data| data
+                else return Error.UnexpectedNullValue;
 
-        defer heap.free(variant);
-        errdefer heap.free(variant);
+                defer heap.free(json_str);
+                errdefer heap.free(json_str);
 
-        inline for (@typeInfo(T).@"enum".fields) |field| {
-            if (mem.eql(u8, field.name, variant)) {
-                @field(row, tag) = @field(T, field.name);
-                return;
+                const data_struct = try Json.parse(T, heap, json_str);
+                @field(rec, tag) = data_struct;
+            } else {
+                return Error.MismatchedType;
+            }
+        },
+        .@"enum" => {
+            if (col.dataType(i) == .Int) {
+                const size = @sizeOf(@typeInfo(T).@"enum".tag_type);
+                if (size > col.bytes(i)) return Error.MismatchedSize;
+                @field(rec, tag) = @enumFromInt(col.int(i));
+            } else if (col.dataType(i) == .Text) {
+                const variant = if (try col.text(i)) |data| data
+                else return Error.UnexpectedNullValue;
+
+                defer heap.free(variant);
+                errdefer heap.free(variant);
+
+                inline for (@typeInfo(T).@"enum".fields) |field| {
+                    if (mem.eql(u8, field.name, variant)) {
+                        @field(rec, tag) = @field(T, field.name);
+                        return;
+                    }
+                }
+            } else {
+                return Error.MismatchedType;
+            }
+        },
+        else => {
+            switch (T) {
+                DataType.Bool => {
+                    if (col.dataType(i) == .Int) {
+                        if (col.bytes(i) != 1) return Error.MismatchedSize;
+                        switch (col.int(i)) {
+                            0 => @field(rec, tag) = false,
+                            1 => @field(rec, tag) = true,
+                            else => return Error.MismatchedValue
+                        }
+                    } else {
+                        return Error.MismatchedType;
+                    }
+                },
+                DataType.Int => {
+                    if (col.dataType(i) == .Int) {
+                        if (col.bytes(i) <= 4) @field(rec, tag) = col.int(i)
+                        else @field(rec, tag) = col.int64(i);
+                    } else {
+                        return Error.MismatchedType;
+                    }
+                },
+                DataType.Float => {
+                    if (col.dataType(i) == .Float) {
+                        @field(rec, tag) = col.double(i);
+                    } else {
+                        return Error.MismatchedType;
+                    }
+                },
+                DataType.Slice => {
+                    if (col.dataType(i) == .Text) {
+                        if (try col.text(i)) |data| @field(rec, tag) = data
+                        else return Error.UnexpectedNullValue;
+                    } else if (col.dataType(i) == .Blob) {
+                        if (try col.blob(i)) |data| @field(rec, tag) = data
+                        else return Error.UnexpectedNullValue;
+                    } else {
+                        return Error.MismatchedType;
+                    }
+                },
+                else => {
+                    @compileError("Field type must be one of `quill.DataType`");
+                }
             }
         }
-    } else {
-        return Error.MismatchedType;
-    }
-}
-
-fn toStruct(
-    heap: Allocator,
-    comptime T: type,
-    col: *Column,
-    i: i32,
-    row: anytype,
-    comptime tag: []const u8)
-!void {
-    if (col.dataType(i) == .Text) {
-        const json_str = if (try col.text(i)) |data| data
-        else return Error.UnexpectedNullValue;
-
-        defer heap.free(json_str);
-        errdefer heap.free(json_str);
-
-        const data_struct = try Json.parse(T, heap, json_str);
-        @field(row, tag) = data_struct;
-    } else {
-        return Error.MismatchedType;
-    }
-}
-
-fn toOptAny(
-    heap: Allocator,
-    comptime T: type,
-    col: *Column,
-    i: i32,
-    row: anytype,
-    comptime tag: []const u8
-) !void {
-    const u_type = @typeInfo(T).optional;
-    if (@typeInfo(u_type.child) == .@"enum") {
-        if (col.dataType(i) == .Null) @field(row, tag) = null
-        else try toEnum(heap, u_type.child, col, i, row, tag);
-    } else if (@typeInfo(u_type.child) == .@"struct") {
-        if (col.dataType(i) == .Null) @field(row, tag) = null
-        else try toStruct(heap, u_type.child, col, i, row, tag);
-    } else {
-        return Error.MismatchedType;
     }
 }
