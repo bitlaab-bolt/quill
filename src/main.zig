@@ -26,7 +26,7 @@ pub const Data = struct {
     status_opt: ?Dt.Any(Status),
     bio: Dt.Slice,
     bio_opt: ?Dt.Slice,
-    social: Dt.Any(Social),
+    social: Dt.Any([]const Social),
     social_opt: ?Dt.Any(Social)
 };
 
@@ -46,7 +46,7 @@ pub const BindData = struct {
     status_opt: ?Dt.CastInto(.Text, Status),
     bio: Dt.CastInto(.Blob, []const u8),
     bio_opt: ?Dt.CastInto(.Blob, []const u8),
-    social: Dt.CastInto(.Text, Social),
+    social: Dt.CastInto(.Text, []const Social),
     social_opt: ?Dt.CastInto(.Text, Social)
 };
 
@@ -127,7 +127,11 @@ pub fn main() !void {
         .status_opt = null,
         .bio = .{.blob = name2},
         .bio_opt = null,
-        .social = .{.text = .{.fb = "facebook", .yt = "youtube"}},
+        .social = .{.text = &.{
+            .{.fb = "facebook1", .yt = "youtube1"},
+            .{.fb = "facebook2", .yt = "youtube2"},
+            .{.fb = "facebook3", .yt = "youtube3"},
+        }},
         .social_opt = .{.text = .{.fb = "facebook", .yt = "youtube"}}
     };
 
@@ -218,7 +222,9 @@ fn readOneExample(db: *quill) !void {
     const result = try crud.readOne(Data);
     defer crud.free(result);
 
-    std.debug.print("Result: {any}\n", .{result.?});
+    // std.debug.print("Result: {any}\n", .{result.?});
+
+    std.debug.print("Result: {any}\n", .{result.?.social});
 
     const urn = try quill.Uuid.toUrn(result.?.uuid);
     std.debug.print("UUID-v7: {any}\n", .{result.?.uuid});
@@ -272,7 +278,7 @@ fn insertDataExample(db: *quill, record: anytype) !void {
     var crud = try db.prepare(sql);
     defer crud.destroy();
 
-    try crud.bind(record);
+    try crud.exec(record, null);
 }
 
 

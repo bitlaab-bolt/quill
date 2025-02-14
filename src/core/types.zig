@@ -35,10 +35,10 @@ pub const DataType = struct {
 
     /// # TypeCasts from SQlite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data retrieval
-    /// - `comptime T` - Given type must be an `enum` or a `struct`
+    /// - `comptime T` - Given type must be an `enum`, `struct` or `[]const T`
     pub fn Any(comptime T: type) type {
         switch (@typeInfo(T)) {
-            .@"enum", .@"struct" => return T,
+            .@"enum", .@"struct", .pointer => return T,
             else => @compileError("Unsupported Data Type")
         }
     }
@@ -70,7 +70,8 @@ pub const DataType = struct {
                 switch (@typeInfo(T)) {
                     .pointer => |p| {
                         constSlice(p);
-                        return struct { blob: T };
+                        if (p.child == u8) return struct { blob: T }
+                        else @compileError("Pointer type must be `[]const u8`");
                     },
                     else => @compileError("Unsupported Type Conversion")
                 }
@@ -79,8 +80,8 @@ pub const DataType = struct {
     }
 
     fn constSlice(ptr: Type.Pointer) void {
-        if (!(ptr.is_const and ptr.size == .slice and ptr.child == u8)) {
-            @compileError("Pointer type must be `[]const u8`");
+        if (!(ptr.is_const and ptr.size == .slice)) {
+            @compileError("Pointer type must be `[]const T`");
         }
     }
 };
@@ -147,8 +148,17 @@ fn typeCast(
                 .pointer => |p| {
                     DataType.constSlice(p);
 
-                    if (@hasField(T, "text")) try bind.text(i, child)
-                    else if (@hasField(T, "blob")) try bind.blob(i, child)
+                    if (@hasField(T, "text")) {
+                        if (p.child == u8) try bind.text(i, child)
+                        else {
+                            const out = try Json.stringify(heap, child);
+                            try list.append(out);
+                            try bind.text(i, out);
+                        }
+                    } else if (@hasField(T, "blob")) {
+                        if (p.child == u8) try bind.blob(i, child)
+                        else @compileError("Unexpected Type Conversion");
+                    }
                     else @compileError("Unexpected Field Name");
                 },
                 else => {
@@ -234,6 +244,33 @@ fn typeConversion(
     comptime tag: []const u8
 ) !void {
     switch (@typeInfo(T)) {
+        .pointer => |p| {
+            DataType.constSlice(p);
+            if (p.child == u8) {
+                if (col.dataType(i) == .Text) {
+                    if (try col.text(i)) |data| @field(rec, tag) = data
+                    else return Error.UnexpectedNullValue;
+                } else if (col.dataType(i) == .Blob) {
+                    if (try col.blob(i)) |data| @field(rec, tag) = data
+                    else return Error.UnexpectedNullValue;
+                } else {
+                    return Error.MismatchedType;
+                }
+            } else {
+                if (col.dataType(i) == .Text) {
+                    const json_str = if (try col.text(i)) |data| data
+                    else return Error.UnexpectedNullValue;
+
+                    defer heap.free(json_str);
+                    errdefer heap.free(json_str);
+
+                    const data_struct = try Json.parse(T, heap, json_str);
+                    @field(rec, tag) = data_struct;
+                } else {
+                    return Error.MismatchedType;
+                }
+            }
+        },
         .@"struct" => {
             if (col.dataType(i) == .Text) {
                 const json_str = if (try col.text(i)) |data| data
@@ -295,17 +332,6 @@ fn typeConversion(
                 DataType.Float => {
                     if (col.dataType(i) == .Float) {
                         @field(rec, tag) = col.double(i);
-                    } else {
-                        return Error.MismatchedType;
-                    }
-                },
-                DataType.Slice => {
-                    if (col.dataType(i) == .Text) {
-                        if (try col.text(i)) |data| @field(rec, tag) = data
-                        else return Error.UnexpectedNullValue;
-                    } else if (col.dataType(i) == .Blob) {
-                        if (try col.blob(i)) |data| @field(rec, tag) = data
-                        else return Error.UnexpectedNullValue;
                     } else {
                         return Error.MismatchedType;
                     }

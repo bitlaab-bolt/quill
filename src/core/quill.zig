@@ -137,24 +137,25 @@ pub const CRUD = struct {
                     switch(@typeInfo(o.child)) {
                         .@"struct" => if (value) |v| try jsonic.free(heap, v),
                         .pointer => |p| {
-                            const const_slice = p.is_const and p.size == .slice;
-                            if (!(const_slice and p.child == u8)) {
+                            if (!(p.is_const and p.size == .slice)) {
                                 @compileError(
-                                    "Pointer type must be `[]const u8`"
+                                    "Pointer type must be `[]const T`"
                                 );
                             }
 
-                            if (value) |v| heap.free(v);
+                            if (p.child == u8) { if (value) |v| heap.free(v); }
+                            else { if (value) |v| try jsonic.free(heap, v); }
                         },
                         else => {} // NOP
                     }
                 },
                 .pointer => |p| {
-                    if (!(p.is_const and p.size == .slice and p.child == u8)) {
-                        @compileError("Pointer type must be `[]const u8`");
+                    if (!(p.is_const and p.size == .slice)) {
+                        @compileError("Pointer type must be `[]const T`");
                     }
 
-                    heap.free(value);
+                    if (p.child == u8) heap.free(value)
+                    else try jsonic.free(heap, value);
                 },
                 else => {} // NOP
             }
