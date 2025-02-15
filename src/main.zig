@@ -61,8 +61,31 @@ pub fn main() !void {
 
     var db = try quill.open(heap, "hello.db");
     defer db.close();
+
+    try quill.Utils.setCache(&db, 1024 * 32);
     errdefer std.debug.print("Error: {s}\n", .{db.errMsg()});
 
+    const c = try quill.Utils.recordCount(&db, "users");
+    std.debug.print("Total records: {}\n", .{c});
+
+    try quill.Utils.checkIntegrity(&db);
+
+    try quill.Utils.setReclaimMode(&db, .INCREMENTAL);
+    _ = try quill.Utils.reclaimUnusedSpace(&db, 1000);
+
+    const vacuum = try quill.Utils.reclaimStatus(&db);
+    std.debug.print("Vaccum Mode: {any}\n", .{vacuum});
+
+
+    // try quill.Utils.removeIndex(&db, "idx_name");
+    // try quill.Utils.createIndex(&db, "idx_name", "users", "name", .Unique);
+
+    const idx_list = try quill.Utils.indexList(heap, &db, "users");
+    defer quill.Utils.indexListFree(heap, idx_list);
+    for (idx_list) |idx| {
+        std.debug.print("IDX: {s}\n", .{idx.name});
+        std.debug.print("Info: {any}\n", .{idx});
+    }
 
     // Toggle following blocks to execute specific operations
 
@@ -93,51 +116,51 @@ pub fn main() !void {
     // }
 
 
-    const static = "John Doe";
-    const name = try heap.alloc(u8, static.len);
-    defer heap.free(name);
+    // const static = "John Doe";
+    // const name = try heap.alloc(u8, static.len);
+    // defer heap.free(name);
 
-    const static2 = "John Doe";
-    const name2 = try heap.alloc(u8, static2.len);
-    defer heap.free(name2);
+    // const static2 = "John Doe";
+    // const name2 = try heap.alloc(u8, static2.len);
+    // defer heap.free(name2);
 
-    std.mem.copyForwards(u8, name, static);
+    // std.mem.copyForwards(u8, name, static);
 
-    // Auto UUID field generator
-    const id = quill.Uuid.new();
-    std.debug.print("UUID-v7: {any}\n", .{&id});
-    std.debug.print("UUID-v7: {s}\n", .{try quill.Uuid.toUrn(&id)});
-    std.debug.assert(
-        std.mem.eql(u8, &id, &(try quill.Uuid.fromUrn(&(try quill.Uuid.toUrn(&id)))))
-    );
+    // // Auto UUID field generator
+    // const id = quill.Uuid.new();
+    // std.debug.print("UUID-v7: {any}\n", .{&id});
+    // std.debug.print("UUID-v7: {s}\n", .{try quill.Uuid.toUrn(&id)});
+    // std.debug.assert(
+    //     std.mem.eql(u8, &id, &(try quill.Uuid.fromUrn(&(try quill.Uuid.toUrn(&id)))))
+    // );
 
-    const data = BindData {
-        .uuid = .{.blob = &id},
-        .name = .{.text = name},
-        .name_opt = null,
-        .balance = 18.00,
-        .balance_opt = null,
-        .age = 5,
-        .age_opt = null,
-        .adult = true,
-        .adult_opt = null,
-        .gender = .{.int = .Male},
-        .gender_opt = null,
-        .status = .{.text = .Married},
-        .status_opt = null,
-        .bio = .{.blob = name2},
-        .bio_opt = null,
-        .social = .{.text = &.{
-            .{.fb = "facebook1", .yt = "youtube1"},
-            .{.fb = "facebook2", .yt = "youtube2"},
-            .{.fb = "facebook3", .yt = "youtube3"},
-        }},
-        .social_opt = .{.text = .{.fb = "facebook", .yt = "youtube"}}
-    };
+    // const data = BindData {
+    //     .uuid = .{.blob = &id},
+    //     .name = .{.text = name},
+    //     .name_opt = null,
+    //     .balance = 18.00,
+    //     .balance_opt = null,
+    //     .age = 5,
+    //     .age_opt = null,
+    //     .adult = true,
+    //     .adult_opt = null,
+    //     .gender = .{.int = .Male},
+    //     .gender_opt = null,
+    //     .status = .{.text = .Married},
+    //     .status_opt = null,
+    //     .bio = .{.blob = name2},
+    //     .bio_opt = null,
+    //     .social = .{.text = &.{
+    //         .{.fb = "facebook1", .yt = "youtube1"},
+    //         .{.fb = "facebook2", .yt = "youtube2"},
+    //         .{.fb = "facebook3", .yt = "youtube3"},
+    //     }},
+    //     .social_opt = .{.text = .{.fb = "facebook", .yt = "youtube"}}
+    // };
 
-    try insertDataExample(&db, data);
+    // try insertDataExample(&db, data);
 
-    try readOneExample(&db);
+    // try readOneExample(&db);
 }
 
 

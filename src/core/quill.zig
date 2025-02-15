@@ -17,6 +17,7 @@ const ExecResult = sqlite3.ExecResult;
 
 // For quick accessability
 pub const Uuid = @import("./uuid.zig");
+pub const Utils = @import("./utils.zig");
 pub const DateTime = @import("./time.zig");
 
 
@@ -113,7 +114,7 @@ pub const CRUD = struct {
                 release(self.heap, result.?);
             },
             .pointer => |p| {
-                if (!(p.is_const and p.size == .slice and p.child == T)) {
+                if (!(p.is_const and p.size == .slice)) {
                     @compileError("Pointer type must be `[]const T`");
                 }
 
@@ -249,12 +250,6 @@ pub const CRUD = struct {
         if (callback) |cb| cb(result)
         else result.destroy();
     }
-};
-
-pub const Utils = struct {
-    // TODO
-    // builting functions sunch as total record count on a collection
-    // check database integrity etc.
 };
 
 
