@@ -32,7 +32,13 @@ pub fn main() !void {
         
     });
 
-    
+    try query.sort(User, &.{
+        .{.asc = "name" },
+        .{.desc = "age" }
+    });
+
+    try query.limit(10);
+    try query.skip(12);
 
     // inserts WHERE NOT clause followed by the string
     // query.except(&.{
@@ -49,5 +55,5 @@ pub fn main() !void {
     // query.ship()
 
     const sql = try query.build();
-    std.log.warn("Generated: {s}|\n", .{sql});
+    std.log.warn("Generated:|{s}|\n", .{sql});
 }
