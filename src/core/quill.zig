@@ -15,12 +15,6 @@ const Option = sqlite3.Option;
 const Result = sqlite3.Result;
 const ExecResult = sqlite3.ExecResult;
 
-// For quick accessability
-pub const Uuid = @import("./uuid.zig");
-pub const Utils = @import("./utils.zig");
-pub const DateTime = @import("./time.zig");
-
-
 heap: Allocator,
 instance: sqlite3.Database,
 
@@ -251,13 +245,6 @@ pub const CRUD = struct {
         else result.destroy();
     }
 };
-
-
-pub const QueryBuilder = struct {
-    // TODO: build complete queries from scratch with step by step function call
-    // TODO: Parse and build complete queries for intermediate JSON string
-};
-
 
 // TODO
 // For streaming large binary object from database

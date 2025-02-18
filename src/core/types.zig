@@ -94,10 +94,13 @@ pub fn convertFrom(
     bind: *Bind,
     record: anytype
 ) !void {
-    const info = @typeInfo(@TypeOf(record)).@"struct";
-    debug.assert(bind.parameterCount() == info.fields.len);
+    const info = @typeInfo(record);
+    if (info != .@"struct") @compileError("Type of `record` must be a struct");
 
-    inline for (info.fields) |field| {
+    const s_info = info.@"struct";
+    debug.assert(bind.parameterCount() == s_info.fields.len);
+
+    inline for (s_info.fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);
         const value = @field(record, field.name);
 
@@ -191,9 +194,13 @@ fn typeCast(
 /// # Converts Field Data into the Given Record Structure
 /// **Remarks:** Intended for internal use only
 pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
-    var dest: T = undefined;
-    const fields = @typeInfo(T).@"struct".fields;
+    const info = @typeInfo(T);
+    if (info != .@"struct") {
+        @compileError("Type of `comptime T` must be a struct");
+    }
 
+    var dest: T = undefined;
+    const fields = info.@"struct".fields;
     if (!matchRecord(col, fields)) return Error.MismatchedFields;
 
     for (0..@as(usize, @intCast(col.count()))) |index| {
