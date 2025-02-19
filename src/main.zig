@@ -7,36 +7,28 @@ const Qb = quill.QueryBuilder;
 
 const BindUser = struct { name: Dt.CastInto(.Text, []const u8), age: Dt.Int };
 
-const User = struct { name: Dt.Slice };
+const User = struct { name: Dt.Slice, age: Dt.Int };
 
 pub fn main() !void {
     var gpa_mem = std.heap.GeneralPurposeAllocator(.{}){};
-    // defer std.debug.assert(gpa_mem.deinit() == .ok);
+    defer std.debug.assert(gpa_mem.deinit() == .ok);
     const heap = gpa_mem.allocator();
 
-    var query = try Qb.Record.find(heap, User, "users");
-    //defer query.free();
+    var query = try Qb.Record.find(heap, BindUser, User, "users");
+    defer query.destroy();
 
     try query.unique();
 
     // inserts WHERE clause followed by the string
     try query.except(&.{
         try query.group(&.{
-            try query.filter(BindUser, "name", Qb.OpStr{.@"=" = "john"}),
+            try query.filter("name", Qb.OpStr{.@"=" = "john"}),
             try query.chain(.AND),
-            try query.filter(BindUser, "age", Qb.Op{.@"=" = 30}),
-            // query.filter(BindUser, "age", .{}),
-            
+            try query.filter("age", Qb.Op{.@"=" = 30}),
         })
-
-        
     });
 
-    try query.sort(User, &.{
-        .{.asc = "name" },
-        .{.desc = "age" }
-    });
-
+    try query.sort(&.{.{.asc = "name" }, .{.desc = "age" }});
     try query.limit(10);
     try query.skip(12);
 

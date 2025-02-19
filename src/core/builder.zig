@@ -14,6 +14,8 @@ const types = @import("./types.zig");
 const Dt = types.DataType;
 
 
+const Error = error { InvalidQueryChain };
+
 /// # For Number Fields
 pub const Op = Operator(i64);
 
@@ -27,7 +29,7 @@ const Container = struct {
 /// # Generic Operator Type for Data Filtering
 /// - Comparison is done in Lexicographical Order for text data
 /// - Text Matching is case-insensitive and only supports `[]const u8`
-pub fn Operator(comptime T: type) type {
+fn Operator(comptime T: type) type {
     return union(enum) {
         /// Checks - Equality
         @"=": T,
@@ -397,8 +399,16 @@ pub fn Operator(comptime T: type) type {
 pub const Record = struct {
     /// # Generates `SELECT` SQL Statement
     /// **Remarks:** Return value must be freed by the `destroy()`
-    pub fn find(heap: Allocator, record: anytype, from: []const u8) !Find {
-        const info = @typeInfo(record);
+    /// - `comptime T` - Record bind structure
+    /// - `comptime U` - Record retrieval structure
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    pub fn find(
+        heap: Allocator,
+        comptime T: type,
+        comptime U: type,
+        from: []const u8
+    ) !Find(T, U) {
+        const info = @typeInfo(U);
         if (info != .@"struct") {
             @compileError("Type of `record` must be a struct");
         }
@@ -417,199 +427,220 @@ pub const Record = struct {
 
         const fmt_str = "SELECT {s} FROM {s}";
         const sql = try fmt.allocPrint(heap, fmt_str, .{tok_str, from});
-        return try Find.create(heap, sql);
+        return try Find(T, U).create(heap, sql);
     }
 
-    const Find = struct {
-        const ChainOperator = enum { AND, OR };
+    /// - `comptime T` - Record bind structure
+    /// - `comptime U` - Record retrieval structure
+    fn Find(comptime T: type, comptime U: type) type {
+        return struct {
+            const ChainOperator = enum { AND, OR };
 
-        const OrderBy = union(enum) {
-            /// Ascending e.g., `A -> Z`, `1-100` etc.
-            asc: []const u8,
-            /// Descending e.g., `Z -> A`, `100-1` etc.
-            desc: []const u8
-        };
-
-        heap: Allocator,
-        tokens: ArrayList([]const u8),
-        statement: ?[]const u8 = null,
-
-        /// # Creates Find Query Builder
-        /// **Remarks:** Intended for internal use only
-        fn create(heap: Allocator, token: []const u8) !Find {
-            var clause = Find {
-                .heap = heap,
-                .tokens = ArrayList([]const u8).init(heap)
+            const OrderBy = union(enum) {
+                /// Ascending e.g., `A -> Z`, `1-100` etc.
+                asc: []const u8,
+                /// Descending e.g., `Z -> A`, `100-1` etc.
+                desc: []const u8
             };
 
-            try clause.tokens.append(token);
-            return clause;
-        }
+            const bind_struct: T = mem.zeroes(T);
+            const read_struct: U = mem.zeroes(U);
 
-        /// # Destroys Find Query Builder
-        pub fn free() void {
+            heap: Allocator,
+            tokens: ArrayList([]const u8),
+            statement: ?[]const u8 = null,
 
-        }
+            const Self = @This();
 
-        /// # Generates SQL Clause
-        /// **Remarks:** Do not call more then once per query builder
-        /// - Combines **DISTINCT** clause
-        pub fn unique(self: *Find) !void {
-            const token = self.tokens.orderedRemove(0);
-            defer self.heap.free(token);
+            /// # Creates Find Query Builder
+            /// **Remarks:** Intended for internal use only
+            fn create(heap: Allocator, token: []const u8) !Self {
+                var clause = Self {
+                    .heap = heap,
+                    .tokens = ArrayList([]const u8).init(heap)
+                };
 
-            const fmt_str = "SELECT DISTINCT {s}";
-            const sql = try fmt.allocPrint(self.heap, fmt_str, .{token[7..]});
-            try self.tokens.insert(0, sql);
-        }
-
-        /// # Generates SQL Comparison Operator Token
-        /// **WARNING:** Return value must be freed by the caller
-        pub fn filter(
-            self: *Find,
-            comptime T: type,
-            comptime field: []const u8,
-            operator: anytype
-        ) ![]const u8 {
-            if (!@hasField(T, field)) @compileError("Mismatched Filter Field");
-            switch (@typeInfo(@FieldType(T, field))) {
-                .optional => |o| typeCheck(o.child, operator),
-                else => typeCheck(@FieldType(T, field), operator)
+                try clause.tokens.append(token);
+                return clause;
             }
 
-            return try @TypeOf(operator).genToken(self.heap, field, operator);
-        }
-
-        /// # Generates SQL Logical Operator Token
-        /// **WARNING:** Return value must be freed by the caller
-        pub fn chain(self: *Find, op: ChainOperator) ![]const u8 {
-            const token = switch (op) {.AND => "AND", .OR => "OR"};
-            const out = try self.heap.alloc(u8, token.len);
-            mem.copyForwards(u8, out, token);
-            return out;
-        }
-
-        /// # Combines Multiple Token as SQL Group
-        /// **WARNING:** Return value must be freed by the caller
-        pub fn group(self: *Find, tokens: []const []const u8) ![]const u8 {
-            var sql = ArrayList(u8).init(self.heap);
-            try sql.append('(');
-
-            for (tokens) |token| {
-                try sql.appendSlice(token);
-                try sql.append(' ');
-                self.heap.free(token);
+            /// # Destroys Find Query Builder
+            pub fn destroy(self: *Self) void {
+                if (self.statement) |v| self.heap.free(v);
+                for (self.tokens.items) |item| self.heap.free(item);
+                self.tokens.deinit();
             }
 
-            try sql.append(')');
-            const data = try sql.toOwnedSlice();
-            return data;
-        }
+            /// # Generates SQL Clause
+            /// - Combines **DISTINCT** clause
+            pub fn unique(self: *Self) !void {
+                if (self.tokens.items.len != 1) return Error.InvalidQueryChain;
 
-        /// # Generates SQL Clause form Given Tokens
-        /// - Generates **WHERE** clause
-        pub fn when(self: *Find, tokens: []const []const u8) !void {
-            var sql = ArrayList(u8).init(self.heap);
-            try sql.appendSlice("WHERE ");
+                const token = self.tokens.orderedRemove(0);
+                defer self.heap.free(token);
 
-            for (tokens) |token| {
-                try sql.appendSlice(token);
-                self.heap.free(token);
+                const fmt_str = "SELECT DISTINCT {s}";
+                const sql = try fmt.allocPrint(self.heap, fmt_str, .{token[7..]});
+                try self.tokens.insert(0, sql);
             }
 
-            const token = try sql.toOwnedSlice();
-            try self.tokens.append(token);
-        }
+            /// # Generates SQL Comparison Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn filter(
+                self: *Self,
+                comptime field: []const u8,
+                operator: anytype
+            ) ![]const u8 {
+                const bind_T = @TypeOf(Self.bind_struct);
+                if (!@hasField(bind_T, field)) {
+                    @compileError("Mismatched Filter Field");
+                }
 
-        /// # Generates SQL Clause form Given Tokens
-        /// - Generates **WHERE NOT** clause
-        pub fn except(self: *Find, tokens: []const []const u8) !void {
-            var sql = ArrayList(u8).init(self.heap);
-            try sql.appendSlice("WHERE NOT (");
+                switch (@typeInfo(@FieldType(bind_T, field))) {
+                    .optional => |o| typeCheck(o.child, operator),
+                    else => typeCheck(@FieldType(T, field), operator)
+                }
 
-            for (tokens) |token| {
-                try sql.appendSlice(token);
-                self.heap.free(token);
+                return try @TypeOf(operator).genToken(self.heap, field, operator);
             }
 
-            try sql.append(')');
-            const token = try sql.toOwnedSlice();
-            try self.tokens.append(token);
-        }
+            /// # Generates SQL Logical Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn chain(self: *Self, op: ChainOperator) ![]const u8 {
+                const token = switch (op) {.AND => "AND", .OR => "OR"};
+                const out = try self.heap.alloc(u8, token.len);
+                mem.copyForwards(u8, out, token);
+                return out;
+            }
 
-        /// # Generates SQL Clause form Given Tokens
-        /// **Remarks:** `comptime T` must be the same `record` type as `find()`
-        /// - Generates **ORDER BY** clause
-        pub fn sort(
-            self: *Find,
-            comptime T: type,
-            comptime order:[]const OrderBy
-        ) !void {
-            comptime debug.assert(order.len > 0);
-            var sql = ArrayList(u8).init(self.heap);
-            try sql.appendSlice("ORDER BY ");
+            /// # Combines Multiple Token as SQL Group
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn group(self: *Self, tokens: []const []const u8) ![]const u8 {
+                var sql = ArrayList(u8).init(self.heap);
+                try sql.append('(');
 
-            inline for (order) |field| {
-                switch (field) {
-                    .asc => |v| {
-                        if (@hasField(T, v)) {
-                            try sql.appendSlice(v);
-                            try sql.appendSlice(" ASC, ");
-                        } else {
-                            @compileError("Mismatched Filter Field");
-                        }
-                    },
-                    .desc => |v| {
-                        if (@hasField(T, v)) {
-                            try sql.appendSlice(v);
-                            try sql.appendSlice(" DESC, ");
-                        } else {
-                            @compileError("Mismatched Filter Field");
+                for (tokens) |token| {
+                    try sql.appendSlice(token);
+                    try sql.append(' ');
+                    self.heap.free(token);
+                }
+
+                try sql.append(')');
+                const data = try sql.toOwnedSlice();
+                return data;
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **WHERE** clause
+            pub fn when(self: *Self, tokens: []const []const u8) !void {
+                if (self.tokens.items.len != 1) return Error.InvalidQueryChain;
+
+                var sql = ArrayList(u8).init(self.heap);
+                try sql.appendSlice("WHERE ");
+
+                for (tokens) |token| {
+                    try sql.appendSlice(token);
+                    self.heap.free(token);
+                }
+
+                const token = try sql.toOwnedSlice();
+                try self.tokens.append(token);
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **WHERE NOT** clause
+            pub fn except(self: *Self, tokens: []const []const u8) !void {
+                if (self.tokens.items.len != 1) return Error.InvalidQueryChain;
+
+                var sql = ArrayList(u8).init(self.heap);
+                try sql.appendSlice("WHERE NOT (");
+
+                for (tokens) |token| {
+                    try sql.appendSlice(token);
+                    self.heap.free(token);
+                }
+
+                try sql.append(')');
+                const token = try sql.toOwnedSlice();
+                try self.tokens.append(token);
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **ORDER BY** clause
+            pub fn sort(self: *Self, comptime order:[]const OrderBy) !void {
+                if (self.tokens.items.len != 2) return Error.InvalidQueryChain;
+
+                comptime debug.assert(order.len > 0);
+                var sql = ArrayList(u8).init(self.heap);
+                try sql.appendSlice("ORDER BY ");
+
+                const read_T = @TypeOf(Self.read_struct);
+
+                inline for (order) |field| {
+                    switch (field) {
+                        .asc => |v| {
+                            if (@hasField(read_T, v)) {
+                                try sql.appendSlice(v);
+                                try sql.appendSlice(" ASC, ");
+                            } else {
+                                @compileError("Mismatched Filter Field");
+                            }
+                        },
+                        .desc => |v| {
+                            if (@hasField(read_T, v)) {
+                                try sql.appendSlice(v);
+                                try sql.appendSlice(" DESC, ");
+                            } else {
+                                @compileError("Mismatched Filter Field");
+                            }
                         }
                     }
                 }
-            }
-
-            debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-            debug.assert(sql.orderedRemove(sql.items.len - 1) == ',');
-            const token = try sql.toOwnedSlice();
-            try self.tokens.append(token);
-        }
-
-        /// # Generates SQL Clause form Given Tokens
-        /// - Generates **LIMIT** clause
-        pub fn limit(self: *Find, comptime count: u32) !void {
-            comptime debug.assert(count > 0);
-            const token = try fmt.allocPrint(self.heap, "LIMIT {d}", .{count});
-            try self.tokens.append(token);
-        }
-
-        /// # Generates SQL Clause form Given Tokens
-        /// - Generates **OFFSET** clause
-        pub fn skip(self: *Find, comptime count: u32) !void {
-            comptime debug.assert(count > 0);
-            const token = try fmt.allocPrint(self.heap, "OFFSET {d}", .{count});
-            try self.tokens.append(token);
-        }
-
-        /// # Generates a Complete SQL Statement
-        /// **Remarks:** Statement is evaluated only once
-        pub fn build(self: *Find) ![]const u8 {
-            if (self.statement) |sql| return sql
-            else {
-                var sql = ArrayList(u8).init(self.heap);
-                for (self.tokens.items) |token| {
-                    try sql.appendSlice(token);
-                    try sql.append(' ');
-                }
 
                 debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-                try sql.append(';');
-                self.statement = try sql.toOwnedSlice();
-                return self.statement.?;
+                debug.assert(sql.orderedRemove(sql.items.len - 1) == ',');
+                const token = try sql.toOwnedSlice();
+                try self.tokens.append(token);
             }
-        }
-    };
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **LIMIT** clause
+            pub fn limit(self: *Self, comptime count: u32) !void {
+                if (self.tokens.items.len != 3) return Error.InvalidQueryChain;
+                comptime debug.assert(count > 0);
+                const token = try fmt.allocPrint(self.heap, "LIMIT {d}", .{count});
+                try self.tokens.append(token);
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **OFFSET** clause
+            pub fn skip(self: *Self, comptime count: u32) !void {
+                if (self.tokens.items.len != 4) return Error.InvalidQueryChain;
+
+                comptime debug.assert(count > 0);
+                const token = try fmt.allocPrint(self.heap, "OFFSET {d}", .{count});
+                try self.tokens.append(token);
+            }
+
+            /// # Generates a Complete SQL Statement
+            /// **Remarks:** Statement is evaluated only once
+            pub fn build(self: *Self) ![]const u8 {
+                if (self.statement) |sql| return sql
+                else {
+                    var sql = ArrayList(u8).init(self.heap);
+                    for (self.tokens.items) |token| {
+                        try sql.appendSlice(token);
+                        try sql.append(' ');
+                    }
+
+                    debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
+                    try sql.append(';');
+                    self.statement = try sql.toOwnedSlice();
+                    return self.statement.?;
+                }
+            }
+        };
+    }
 
 
 
