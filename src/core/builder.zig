@@ -525,6 +525,7 @@ pub const Record = struct {
                     self.heap.free(token);
                 }
 
+                debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
                 try sql.append(')');
                 const data = try sql.toOwnedSlice();
                 return data;
@@ -540,9 +541,11 @@ pub const Record = struct {
 
                 for (tokens) |token| {
                     try sql.appendSlice(token);
+                    try sql.append(' ');
                     self.heap.free(token);
                 }
 
+                debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
                 const token = try sql.toOwnedSlice();
                 try self.tokens.append(token);
             }
@@ -557,9 +560,11 @@ pub const Record = struct {
 
                 for (tokens) |token| {
                     try sql.appendSlice(token);
+                    try sql.append(' ');
                     self.heap.free(token);
                 }
 
+                debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
                 try sql.append(')');
                 const token = try sql.toOwnedSlice();
                 try self.tokens.append(token);
