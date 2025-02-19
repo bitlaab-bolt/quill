@@ -20,7 +20,8 @@ pub fn main() !void {
     try query.unique();
 
     // inserts WHERE clause followed by the string
-    try query.except(&.{
+    try query.when(&.{
+        try query.chain(.NOT),
         try query.group(&.{
             try query.filter("name", Qb.OpStr{.@"=" = "john"}),
             try query.chain(.AND),

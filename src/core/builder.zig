@@ -434,7 +434,7 @@ pub const Record = struct {
     /// - `comptime U` - Record retrieval structure
     fn Find(comptime T: type, comptime U: type) type {
         return struct {
-            const ChainOperator = enum { AND, OR };
+            const ChainOperator = enum { AND, OR, NOT };
 
             const OrderBy = union(enum) {
                 /// Ascending e.g., `A -> Z`, `1-100` etc.
@@ -507,7 +507,11 @@ pub const Record = struct {
             /// # Generates SQL Logical Operator Token
             /// **WARNING:** Return value must be freed by the caller
             pub fn chain(self: *Self, op: ChainOperator) ![]const u8 {
-                const token = switch (op) {.AND => "AND", .OR => "OR"};
+                const token = switch (op) {
+                    .AND => "AND",
+                    .OR => "OR",
+                    .NOT => "NOT"
+                };
                 const out = try self.heap.alloc(u8, token.len);
                 mem.copyForwards(u8, out, token);
                 return out;
@@ -546,26 +550,6 @@ pub const Record = struct {
                 }
 
                 debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-                const token = try sql.toOwnedSlice();
-                try self.tokens.append(token);
-            }
-
-            /// # Generates SQL Clause form Given Tokens
-            /// - Generates **WHERE NOT** clause
-            pub fn except(self: *Self, tokens: []const []const u8) !void {
-                if (self.tokens.items.len != 1) return Error.InvalidQueryChain;
-
-                var sql = ArrayList(u8).init(self.heap);
-                try sql.appendSlice("WHERE NOT (");
-
-                for (tokens) |token| {
-                    try sql.appendSlice(token);
-                    try sql.append(' ');
-                    self.heap.free(token);
-                }
-
-                debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-                try sql.append(')');
                 const token = try sql.toOwnedSlice();
                 try self.tokens.append(token);
             }
