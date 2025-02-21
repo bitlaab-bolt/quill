@@ -16,8 +16,8 @@ const Dt = types.DataType;
 
 
 const Error = error {
+    MismatchedConstraint,
     InvalidFunctionChain,
-    MismatchedUpdateOption,
     InvalidNamingConvention
 };
 
@@ -404,7 +404,7 @@ fn Operator(comptime T: type) type {
 const ChainOperator = enum { AND, OR, NOT };
 
 pub const Record = struct {
-    const Option = enum { Filtered, All };
+    const Constraint = enum { Exact, All };
     const Action = enum { Default, Replace, Ignore };
 
     /// # Generates `SELECT` SQL Statement
@@ -418,6 +418,7 @@ pub const Record = struct {
         comptime U: type,
         from: []const u8
     ) !Find(T, U) {
+        // Both T and U must be a struct
         const info = @typeInfo(U);
         if (info != .@"struct") {
             @compileError("Type of `U` must be a struct");
@@ -740,29 +741,30 @@ pub const Record = struct {
         };
     }
 
+    /// # Generates `UPDATE` SQL Statement
+    /// **Remarks:** Return value must be freed by the `destroy()`
+    /// - `comptime T` - Record bind structure
+    /// - `comptime U` - Record Update structure
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    /// - `opt` - Record update option, Use `All` with **CAUTION**
     pub fn update(
         heap: Allocator,
         comptime T: type,
+        comptime U: type,
         from: []const u8,
-        opt: Option
-    ) !Update(T) {
-        const info = @typeInfo(T);
+        opt: Constraint
+    ) !Update(T, U) {
+        const info = @typeInfo(U);
         if (info != .@"struct") {
-            @compileError("Type of `T` must be a struct");
+            @compileError("Type of `U` must be a struct");
         }
 
         var value = ArrayList(u8).init(heap);
         inline for (info.@"struct".fields) |field| {
-            if (comptime mem.startsWith(u8, field.name, "set_")) {
-                try value.appendSlice(field.name[4..]);
-                try value.appendSlice(" = :");
-                try value.appendSlice(field.name);
-                try value.appendSlice(", ");
-            } else {
-                if (!comptime mem.startsWith(u8, field.name, "when_")) {
-                    @compileError("Invalid Update Field Naming Convention");
-                }
-            }
+            try value.appendSlice(field.name);
+            try value.appendSlice(" = :");
+            try value.appendSlice(field.name);
+            try value.appendSlice(", ");
         }
 
         debug.assert(value.items.len > 0);
@@ -773,15 +775,18 @@ pub const Record = struct {
 
         const fmt_str = "UPDATE {s} SET {s}";
         const sql = try fmt.allocPrint(heap, fmt_str, .{from, value_str});
-        return try Update(T).create(heap, sql, opt);
+        return try Update(T, U).create(heap, sql, opt);
     }
 
-    fn Update(comptime T: type) type {
+    /// - `comptime T` - Record bind structure
+    /// - `comptime U` - Record update structure
+    fn Update(comptime T: type, comptime U: type) type {
         return struct {
             const bind_struct: T = mem.zeroes(T);
+            const update_struct: U = mem.zeroes(U);
 
             heap: Allocator,
-            option: Option = undefined,
+            option: Constraint = undefined,
             tokens: ArrayList([]const u8),
             statement: ?[]const u8 = null,
 
@@ -789,7 +794,11 @@ pub const Record = struct {
 
             /// # Creates Update Query Builder
             /// **Remarks:** Intended for internal use only
-            fn create(heap: Allocator, token: []const u8, opt: Option) !Self {
+            fn create(
+                heap: Allocator,
+                token: []const u8,
+                opt: Constraint
+            ) !Self {
                 var str = try Common.create(heap, Self, token);
                 str.option = opt;
                 return str;
@@ -806,20 +815,7 @@ pub const Record = struct {
                 operator: anytype
             ) ![]const u8 {
                 const bind_T = @TypeOf(Self.bind_struct);
-                const token = try Common.filter(self, bind_T, field, operator);
-                defer self.heap.free(token);
-
-                if (mem.startsWith(u8, token, "set_")) {
-                    const tok = try self.heap.alloc(u8, token[4..].len);
-                    mem.copyForwards(u8, tok, token[4..]);
-                    return tok;
-                } else if (mem.startsWith(u8, token, "when_")) {
-                    const tok = try self.heap.alloc(u8, token[5..].len);
-                    mem.copyForwards(u8, tok, token[5..]);
-                    return tok;
-                } else {
-                    return Error.InvalidNamingConvention;
-                }
+                return try Common.filter(self, bind_T, field, operator);
             }
 
             /// # Generates SQL Logical Operator Token
@@ -844,14 +840,14 @@ pub const Record = struct {
             /// **Remarks:** Statement is evaluated only once
             pub fn build(self: *Self) ![]const u8 {
                 switch (self.option) {
-                    .Filtered => {
+                    .Exact => {
                         if (self.tokens.items.len != 2) {
-                            return Error.MismatchedUpdateOption;
+                            return Error.MismatchedConstraint;
                         }
                     },
                     .All => {
                         if (self.tokens.items.len != 1) {
-                            return Error.MismatchedUpdateOption;
+                            return Error.MismatchedConstraint;
                         }
                     }
                 }
@@ -861,15 +857,99 @@ pub const Record = struct {
         };
     }
 
-    // pub fn remove() RemoveRecord {
+    /// # Generates `DELETE` SQL Statement
+    /// **Remarks:** Return value must be freed by the `destroy()`
+    /// - `comptime T` - Record bind structure
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    /// - `opt` - Record delete option, Use `All` with **CAUTION**
+    pub fn remove(
+        heap: Allocator,
+        comptime T: type,
+        from: []const u8,
+        opt: Constraint
+    ) !Remove(T) {
+        const fmt_str = "DELETE FROM {s}";
+        const sql = try fmt.allocPrint(heap, fmt_str, .{from});
+        return try Remove(T).create(heap, sql, opt);
+    }
 
-    // }
+    /// - `comptime T` - Record bind structure
+    fn Remove(comptime T: type) type {
+        return struct {
+            const bind_struct: T = mem.zeroes(T);
+
+            heap: Allocator,
+            option: Constraint = undefined,
+            tokens: ArrayList([]const u8),
+            statement: ?[]const u8 = null,
+
+            const Self = @This();
+
+            /// # Creates Remove Query Builder
+            /// **Remarks:** Intended for internal use only
+            fn create(
+                heap: Allocator,
+                token: []const u8,
+                opt: Constraint
+            ) !Self {
+                var str = try Common.create(heap, Self, token);
+                str.option = opt;
+                return str;
+            }
+
+            /// # Destroys Remove Query Builder
+            pub fn destroy(self: *Self) void { Common.destroy(self); }
+
+            /// # Generates SQL Comparison Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn filter(
+                self: *Self,
+                comptime field: []const u8,
+                operator: anytype
+            ) ![]const u8 {
+                const bind_T = @TypeOf(Self.bind_struct);
+                return try Common.filter(self, bind_T, field, operator);
+            }
+
+            /// # Generates SQL Logical Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn chain(self: *Self, op: ChainOperator) ![]const u8 {
+                return try Common.chain(self, op);
+            }
+
+            /// # Combines Multiple Token as SQL Group
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn group(self: *Self, tokens: []const []const u8) ![]const u8 {
+                return try Common.group(self, tokens);
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **WHERE** clause
+            pub fn when(self: *Self, tokens: []const []const u8) !void {
+                return try Common.when(self, tokens);
+            }
+
+            /// # Generates a Complete SQL Statement
+            /// **Remarks:** Statement is evaluated only once
+            pub fn build(self: *Self) ![]const u8 {
+                switch (self.option) {
+                    .Exact => {
+                        if (self.tokens.items.len != 2) {
+                            return Error.MismatchedConstraint;
+                        }
+                    },
+                    .All => {
+                        if (self.tokens.items.len != 1) {
+                            return Error.MismatchedConstraint;
+                        }
+                    }
+                }
+
+                return try Common.build(self);
+            }
+        };
+    }
 };
-
-
-
-
-
 
 /// # Contains Generic Functionality
 const Common = struct {
