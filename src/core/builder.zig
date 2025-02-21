@@ -1,6 +1,7 @@
 //! # SQL Statement Builder
 //! **Remarks:** For complex and computationally expensive queries such as
 //! pattern matching on a large text field, use **Raw SQL Statement** instead.
+//! TODO: Statically generate builder string at compile time for performance!!!
 
 const std = @import("std");
 const fmt = std.fmt;
@@ -14,7 +15,11 @@ const types = @import("./types.zig");
 const Dt = types.DataType;
 
 
-const Error = error { InvalidQueryChain };
+const Error = error {
+    InvalidFunctionChain,
+    MismatchedUpdateOption,
+    InvalidNamingConvention
+};
 
 /// # For Number Fields
 pub const Op = Operator(i64);
@@ -396,7 +401,12 @@ fn Operator(comptime T: type) type {
     };
 }
 
+const ChainOperator = enum { AND, OR, NOT };
+
 pub const Record = struct {
+    const Option = enum { Filtered, All };
+    const Action = enum { Default, Replace, Ignore };
+
     /// # Generates `SELECT` SQL Statement
     /// **Remarks:** Return value must be freed by the `destroy()`
     /// - `comptime T` - Record bind structure
@@ -410,7 +420,7 @@ pub const Record = struct {
     ) !Find(T, U) {
         const info = @typeInfo(U);
         if (info != .@"struct") {
-            @compileError("Type of `record` must be a struct");
+            @compileError("Type of `U` must be a struct");
         }
 
         var tokens = ArrayList(u8).init(heap);
@@ -434,8 +444,6 @@ pub const Record = struct {
     /// - `comptime U` - Record retrieval structure
     fn Find(comptime T: type, comptime U: type) type {
         return struct {
-            const ChainOperator = enum { AND, OR, NOT };
-
             const OrderBy = union(enum) {
                 /// Ascending e.g., `A -> Z`, `1-100` etc.
                 asc: []const u8,
@@ -455,26 +463,18 @@ pub const Record = struct {
             /// # Creates Find Query Builder
             /// **Remarks:** Intended for internal use only
             fn create(heap: Allocator, token: []const u8) !Self {
-                var clause = Self {
-                    .heap = heap,
-                    .tokens = ArrayList([]const u8).init(heap)
-                };
-
-                try clause.tokens.append(token);
-                return clause;
+                return try Common.create(heap, Self, token);
             }
 
             /// # Destroys Find Query Builder
-            pub fn destroy(self: *Self) void {
-                if (self.statement) |v| self.heap.free(v);
-                for (self.tokens.items) |item| self.heap.free(item);
-                self.tokens.deinit();
-            }
+            pub fn destroy(self: *Self) void { Common.destroy(self); }
 
             /// # Generates SQL Clause
             /// - Combines **DISTINCT** clause
             pub fn unique(self: *Self) !void {
-                if (self.tokens.items.len != 1) return Error.InvalidQueryChain;
+                if (self.tokens.items.len != 1) {
+                    return Error.InvalidFunctionChain;
+                }
 
                 const token = self.tokens.orderedRemove(0);
                 defer self.heap.free(token);
@@ -492,72 +492,33 @@ pub const Record = struct {
                 operator: anytype
             ) ![]const u8 {
                 const bind_T = @TypeOf(Self.bind_struct);
-                if (!@hasField(bind_T, field)) {
-                    @compileError("Mismatched Filter Field");
-                }
-
-                switch (@typeInfo(@FieldType(bind_T, field))) {
-                    .optional => |o| typeCheck(o.child, operator),
-                    else => typeCheck(@FieldType(T, field), operator)
-                }
-
-                return try @TypeOf(operator).genToken(self.heap, field, operator);
+                return try Common.filter(self, bind_T, field, operator);
             }
 
             /// # Generates SQL Logical Operator Token
             /// **WARNING:** Return value must be freed by the caller
             pub fn chain(self: *Self, op: ChainOperator) ![]const u8 {
-                const token = switch (op) {
-                    .AND => "AND",
-                    .OR => "OR",
-                    .NOT => "NOT"
-                };
-                const out = try self.heap.alloc(u8, token.len);
-                mem.copyForwards(u8, out, token);
-                return out;
+                return try Common.chain(self, op);
             }
 
             /// # Combines Multiple Token as SQL Group
             /// **WARNING:** Return value must be freed by the caller
             pub fn group(self: *Self, tokens: []const []const u8) ![]const u8 {
-                var sql = ArrayList(u8).init(self.heap);
-                try sql.append('(');
-
-                for (tokens) |token| {
-                    try sql.appendSlice(token);
-                    try sql.append(' ');
-                    self.heap.free(token);
-                }
-
-                debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-                try sql.append(')');
-                const data = try sql.toOwnedSlice();
-                return data;
+                return try Common.group(self, tokens);
             }
 
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **WHERE** clause
             pub fn when(self: *Self, tokens: []const []const u8) !void {
-                if (self.tokens.items.len != 1) return Error.InvalidQueryChain;
-
-                var sql = ArrayList(u8).init(self.heap);
-                try sql.appendSlice("WHERE ");
-
-                for (tokens) |token| {
-                    try sql.appendSlice(token);
-                    try sql.append(' ');
-                    self.heap.free(token);
-                }
-
-                debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-                const token = try sql.toOwnedSlice();
-                try self.tokens.append(token);
+                return try Common.when(self, tokens);
             }
 
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **ORDER BY** clause
             pub fn sort(self: *Self, comptime order:[]const OrderBy) !void {
-                if (self.tokens.items.len != 2) return Error.InvalidQueryChain;
+                if (self.tokens.items.len != 2) {
+                    return Error.InvalidFunctionChain;
+                }
 
                 comptime debug.assert(order.len > 0);
                 var sql = ArrayList(u8).init(self.heap);
@@ -594,64 +555,315 @@ pub const Record = struct {
 
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **LIMIT** clause
-            pub fn limit(self: *Self, comptime count: u32) !void {
-                if (self.tokens.items.len != 3) return Error.InvalidQueryChain;
-                comptime debug.assert(count > 0);
-                const token = try fmt.allocPrint(self.heap, "LIMIT {d}", .{count});
+            pub fn limit(self: *Self, comptime v: u32) !void {
+                if (self.tokens.items.len != 3) {
+                    return Error.InvalidFunctionChain;
+                }
+
+                comptime debug.assert(v > 0);
+                const token = try fmt.allocPrint(self.heap, "LIMIT {d}", .{v});
                 try self.tokens.append(token);
             }
 
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **OFFSET** clause
-            pub fn skip(self: *Self, comptime count: u32) !void {
-                if (self.tokens.items.len != 4) return Error.InvalidQueryChain;
+            pub fn skip(self: *Self, comptime v: u32) !void {
+                if (self.tokens.items.len != 4) {
+                    return Error.InvalidFunctionChain;
+                }
 
-                comptime debug.assert(count > 0);
-                const token = try fmt.allocPrint(self.heap, "OFFSET {d}", .{count});
+                comptime debug.assert(v > 0);
+                const token = try fmt.allocPrint(self.heap, "OFFSET {d}", .{v});
                 try self.tokens.append(token);
             }
 
             /// # Generates a Complete SQL Statement
             /// **Remarks:** Statement is evaluated only once
             pub fn build(self: *Self) ![]const u8 {
-                if (self.statement) |sql| return sql
-                else {
-                    var sql = ArrayList(u8).init(self.heap);
-                    for (self.tokens.items) |token| {
-                        try sql.appendSlice(token);
-                        try sql.append(' ');
-                    }
-
-                    debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
-                    try sql.append(';');
-                    self.statement = try sql.toOwnedSlice();
-                    return self.statement.?;
-                }
+                return try Common.build(self);
             }
         };
     }
 
+    /// # Generates `SELECT COUNT(*)` SQL Statement
+    /// **Remarks:** Return value must be freed by the `destroy()`
+    /// - `comptime T` - Record bind structure
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    pub fn count(
+        heap: Allocator,
+        comptime T: type,
+        from: []const u8
+    ) !Count(T) {
+        const fmt_str = "SELECT COUNT(*) FROM {s}";
+        const sql = try fmt.allocPrint(heap, fmt_str, .{from});
+        return try Count(T).create(heap, sql);
+    }
 
+    /// - `comptime T` - Record bind structure
+    fn Count(comptime T: type) type {
+        return struct {
+            const bind_struct: T = mem.zeroes(T);
 
-    // pub fn count() CountRecord {
+            heap: Allocator,
+            tokens: ArrayList([]const u8),
+            statement: ?[]const u8 = null,
 
-    // }
+            const Self = @This();
 
-    // pub fn create() CreateRecord {
+            /// # Creates Count Query Builder
+            /// **Remarks:** Intended for internal use only
+            fn create(heap: Allocator, token: []const u8) !Self {
+                return try Common.create(heap, Self, token);
+            }
 
-    // }
+            /// # Destroys Count Query Builder
+            pub fn destroy(self: *Self) void { Common.destroy(self); }
 
-    // pub fn update() UpdateRecord {
+            /// # Generates SQL Comparison Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn filter(
+                self: *Self,
+                comptime field: []const u8,
+                operator: anytype
+            ) ![]const u8 {
+                const bind_T = @TypeOf(Self.bind_struct);
+                return try Common.filter(self, bind_T, field, operator);
+            }
 
-    // }
+            /// # Generates SQL Logical Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn chain(self: *Self, op: ChainOperator) ![]const u8 {
+                return try Common.chain(self, op);
+            }
+
+            /// # Combines Multiple Token as SQL Group
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn group(self: *Self, tokens: []const []const u8) ![]const u8 {
+                return try Common.group(self, tokens);
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **WHERE** clause
+            pub fn when(self: *Self, tokens: []const []const u8) !void {
+                return try Common.when(self, tokens);
+            }
+
+            /// # Generates a Complete SQL Statement
+            /// **Remarks:** Statement is evaluated only once
+            pub fn build(self: *Self) ![]const u8 {
+                return try Common.build(self);
+            }
+        };
+    }
+
+    /// # Generates `INSERT` SQL Statement
+    /// **Remarks:** Return value must be freed by the `destroy()`
+    /// - `comptime T` - Record bind structure
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    pub fn create(
+        heap: Allocator,
+        comptime T: type,
+        from: []const u8,
+        act: Action
+    ) !Create(T) {
+        const info = @typeInfo(T);
+        if (info != .@"struct") {
+            @compileError("Type of `T` must be a struct");
+        }
+
+        var tags = ArrayList(u8).init(heap);
+        inline for (info.@"struct".fields) |field| {
+            try tags.appendSlice(field.name);
+            try tags.appendSlice(", ");
+        }
+        debug.assert(tags.orderedRemove(tags.items.len - 1) == ' ');
+        debug.assert(tags.orderedRemove(tags.items.len - 1) == ',');
+        const tag_str = try tags.toOwnedSlice();
+        defer heap.free(tag_str);
+
+        var values = ArrayList(u8).init(heap);
+        inline for (info.@"struct".fields) |field| {
+            try values.append(':');
+            try values.appendSlice(field.name);
+            try values.appendSlice(", ");
+        }
+
+        debug.assert(values.orderedRemove(values.items.len - 1) == ' ');
+        debug.assert(values.orderedRemove(values.items.len - 1) == ',');
+        const value_str = try values.toOwnedSlice();
+        defer heap.free(value_str);
+
+        const fmt_str = switch(act) {
+            .Default => try fmt.allocPrint(
+                heap, "INSERT INTO {s}", .{from}
+            ),
+            .Replace => try fmt.allocPrint(
+                heap, "INSERT OR REPLACE INTO {s}", .{from}
+            ),
+            .Ignore => try fmt.allocPrint(
+                heap, "INSERT OR IGNORE INTO {s}", .{from}
+            )
+        };
+        defer heap.free(fmt_str);
+
+        const sql = try fmt.allocPrint(
+            heap, "{s} ({s}) VALUES ({s})", .{fmt_str, tag_str, value_str}
+        );
+        return try Create(T).create(heap, sql);
+    }
+
+    /// - `comptime T` - Record bind structure
+    fn Create(comptime T: type) type {
+        return struct {
+            const bind_struct: T = mem.zeroes(T);
+
+            heap: Allocator,
+            tokens: ArrayList([]const u8),
+            statement: ?[]const u8 = null,
+
+            const Self = @This();
+
+            /// # Creates Count Query Builder
+            /// **Remarks:** Intended for internal use only
+            fn create(heap: Allocator, token: []const u8) !Self {
+                return try Common.create(heap, Self, token);
+            }
+
+            /// # Destroys Count Query Builder
+            pub fn destroy(self: *Self) void { Common.destroy(self); }
+
+            /// # Generates a Complete SQL Statement
+            /// **Remarks:** Statement is evaluated only once
+            pub fn build(self: *Self) ![]const u8 {
+                return try Common.build(self);
+            }
+        };
+    }
+
+    pub fn update(
+        heap: Allocator,
+        comptime T: type,
+        from: []const u8,
+        opt: Option
+    ) !Update(T) {
+        const info = @typeInfo(T);
+        if (info != .@"struct") {
+            @compileError("Type of `T` must be a struct");
+        }
+
+        var value = ArrayList(u8).init(heap);
+        inline for (info.@"struct".fields) |field| {
+            if (comptime mem.startsWith(u8, field.name, "set_")) {
+                try value.appendSlice(field.name[4..]);
+                try value.appendSlice(" = :");
+                try value.appendSlice(field.name);
+                try value.appendSlice(", ");
+            } else {
+                if (!comptime mem.startsWith(u8, field.name, "when_")) {
+                    @compileError("Invalid Update Field Naming Convention");
+                }
+            }
+        }
+
+        debug.assert(value.items.len > 0);
+        debug.assert(value.orderedRemove(value.items.len - 1) == ' ');
+        debug.assert(value.orderedRemove(value.items.len - 1) == ',');
+        const value_str = try value.toOwnedSlice();
+        defer heap.free(value_str);
+
+        const fmt_str = "UPDATE {s} SET {s}";
+        const sql = try fmt.allocPrint(heap, fmt_str, .{from, value_str});
+        return try Update(T).create(heap, sql, opt);
+    }
+
+    fn Update(comptime T: type) type {
+        return struct {
+            const bind_struct: T = mem.zeroes(T);
+
+            heap: Allocator,
+            option: Option = undefined,
+            tokens: ArrayList([]const u8),
+            statement: ?[]const u8 = null,
+
+            const Self = @This();
+
+            /// # Creates Update Query Builder
+            /// **Remarks:** Intended for internal use only
+            fn create(heap: Allocator, token: []const u8, opt: Option) !Self {
+                var str = try Common.create(heap, Self, token);
+                str.option = opt;
+                return str;
+            }
+
+            /// # Destroys Update Query Builder
+            pub fn destroy(self: *Self) void { Common.destroy(self); }
+
+            /// # Generates SQL Comparison Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn filter(
+                self: *Self,
+                comptime field: []const u8,
+                operator: anytype
+            ) ![]const u8 {
+                const bind_T = @TypeOf(Self.bind_struct);
+                const token = try Common.filter(self, bind_T, field, operator);
+                defer self.heap.free(token);
+
+                if (mem.startsWith(u8, token, "set_")) {
+                    const tok = try self.heap.alloc(u8, token[4..].len);
+                    mem.copyForwards(u8, tok, token[4..]);
+                    return tok;
+                } else if (mem.startsWith(u8, token, "when_")) {
+                    const tok = try self.heap.alloc(u8, token[5..].len);
+                    mem.copyForwards(u8, tok, token[5..]);
+                    return tok;
+                } else {
+                    return Error.InvalidNamingConvention;
+                }
+            }
+
+            /// # Generates SQL Logical Operator Token
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn chain(self: *Self, op: ChainOperator) ![]const u8 {
+                return try Common.chain(self, op);
+            }
+
+            /// # Combines Multiple Token as SQL Group
+            /// **WARNING:** Return value must be freed by the caller
+            pub fn group(self: *Self, tokens: []const []const u8) ![]const u8 {
+                return try Common.group(self, tokens);
+            }
+
+            /// # Generates SQL Clause form Given Tokens
+            /// - Generates **WHERE** clause
+            pub fn when(self: *Self, tokens: []const []const u8) !void {
+                return try Common.when(self, tokens);
+            }
+
+            /// # Generates a Complete SQL Statement
+            /// **Remarks:** Statement is evaluated only once
+            pub fn build(self: *Self) ![]const u8 {
+                switch (self.option) {
+                    .Filtered => {
+                        if (self.tokens.items.len != 2) {
+                            return Error.MismatchedUpdateOption;
+                        }
+                    },
+                    .All => {
+                        if (self.tokens.items.len != 1) {
+                            return Error.MismatchedUpdateOption;
+                        }
+                    }
+                }
+
+                return try Common.build(self);
+            }
+        };
+    }
 
     // pub fn remove() RemoveRecord {
 
     // }
-
-    // pub fn build() []const u8 {
-
-    // }
 };
 
 
@@ -659,21 +871,119 @@ pub const Record = struct {
 
 
 
+/// # Contains Generic Functionality
+const Common = struct {
+    /// # Creates a Generic Query Builder
+    fn create(heap: Allocator, comptime T: type, token: []const u8) !T {
+        var clause = T {
+            .heap = heap,
+            .tokens = ArrayList([]const u8).init(heap)
+        };
 
-const RecordCount = struct {
+        try clause.tokens.append(token);
+        return clause;
+    }
 
-};
+    /// # Destroys Generic Query Builder
+    pub fn destroy(self: anytype) void {
+        if (self.statement) |v| self.heap.free(v);
+        for (self.tokens.items) |item| self.heap.free(item);
+        self.tokens.deinit();
+    }
 
-const RecordCreate = struct {
+    /// # Generates SQL Comparison Operator Token
+    /// **Remarks:** Generic filter function implementation
+    ///
+    /// **WARNING:** Return value must be freed by the caller
+    pub fn filter(
+        self: anytype,
+        comptime T: type,
+        comptime field: []const u8,
+        operator: anytype
+    ) ![]const u8 {
+        if (!@hasField(T, field)) @compileError("Mismatched Filter Field");
 
-};
+        switch (@typeInfo(@FieldType(T, field))) {
+            .optional => |o| typeCheck(o.child, operator),
+            else => typeCheck(@FieldType(T, field), operator)
+        }
 
-const RecordUpdate = struct {
+        return try @TypeOf(operator).genToken(self.heap, field, operator);
+    }
 
-};
+    /// # Generates SQL Logical Operator Token
+    /// **Remarks:** Generic chain function implementation
+    ///
+    /// **WARNING:** Return value must be freed by the caller
+    pub fn chain(self: anytype, op: ChainOperator) ![]const u8 {
+        const token = switch (op) { .AND => "AND", .OR => "OR", .NOT => "NOT" };
+        const out = try self.heap.alloc(u8, token.len);
+        mem.copyForwards(u8, out, token);
+        return out;
+    }
 
-const RecordRemove = struct {
+    /// # Combines Multiple Token as SQL Group
+    /// **Remarks:** Generic group function implementation
+    ///
+    /// **WARNING:** Return value must be freed by the caller
+    pub fn group(self: anytype, tokens: []const []const u8) ![]const u8 {
+        var sql = ArrayList(u8).init(self.heap);
+        try sql.append('(');
 
+        for (tokens) |token| {
+            try sql.appendSlice(token);
+            try sql.append(' ');
+            self.heap.free(token);
+        }
+
+        debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
+        try sql.append(')');
+        const data = try sql.toOwnedSlice();
+        return data;
+    }
+
+    /// # Generates SQL Clause form Given Tokens
+    /// **Remarks:** Generic when function implementation
+    ///
+    /// - Generates **WHERE** clause
+    pub fn when(self: anytype, tokens: []const []const u8) !void {
+        if (self.tokens.items.len != 1) {
+            return Error.InvalidFunctionChain;
+        }
+
+        var sql = ArrayList(u8).init(self.heap);
+        try sql.appendSlice("WHERE ");
+
+        for (tokens) |token| {
+            try sql.appendSlice(token);
+            try sql.append(' ');
+            self.heap.free(token);
+        }
+
+        debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
+        const token = try sql.toOwnedSlice();
+        try self.tokens.append(token);
+    }
+
+    /// # Generates a Complete SQL Statement
+    /// **Remarks:** Generic build function implementation
+    ///
+    /// **Remarks:** Statement is evaluated only once
+    pub fn build(self: anytype) ![]const u8 {
+        if (self.statement) |sql| return sql
+        else {
+            var sql = ArrayList(u8).init(self.heap);
+            for (self.tokens.items) |token| {
+                try sql.appendSlice(token);
+                try sql.append(' ');
+            }
+
+            debug.assert(sql.orderedRemove(sql.items.len - 1) == ' ');
+            try sql.append(';');
+            self.statement = try sql.toOwnedSlice();
+            return self.statement.?;
+        }
+    }
 };
 
 /// # Checks Field and Operator Type Compatibility

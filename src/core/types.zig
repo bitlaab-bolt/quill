@@ -88,6 +88,7 @@ pub const DataType = struct {
 
 /// # Converts Field Data from the Given Record Structure
 /// **Remarks:** Intended for internal use only
+/// TODO: show mitch match fields name when assert of field len failed
 pub fn convertFrom(
     heap: Allocator,
     list: *ArrayList([]const u8),

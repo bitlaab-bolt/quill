@@ -16,12 +16,20 @@ const Error = error { FailedIntegrityChecks };
 pub const Record = struct {
     /// # Returns Total Number of Records
     /// - `from` - Container name e.g., `users`, `accounts` etc.
-    pub fn count(db: *quill, comptime from: []const u8) !usize {
+    pub fn countTotal(db: *quill, comptime from: []const u8) !usize {
         var result = try db.exec("SELECT COUNT(*) FROM " ++ from ++ ";");
         defer result.destroy();
 
         const field = result.next().?[0];
         return try fmt.parseInt(usize, field.data, 10);
+    }
+
+    /// # Returns Total Number of Matching Records
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    pub fn count(db: *quill, sql: []const u8, from: []const u8) !usize {
+        _ = db;
+        _ = sql;
+        _ = from;
     }
 };
 
