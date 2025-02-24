@@ -11,7 +11,8 @@ const testing = std.testing;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 
-const Dt = @import("./types.zig").DataType;
+const types = @import("./types.zig");
+const Dt = types.DataType;
 
 
 const Error = error {
@@ -26,104 +27,54 @@ pub const Op = Operator(i64);
 /// # Operator Type for Text Fields
 pub const OpText = Operator([]const u8);
 
-pub const Container = struct {
-    /// # Generates `CREATE TABLE` SQL Statement
-    /// - `T` - Record Model structure
-    /// - `name` - Container name e.g., `users`, `accounts` etc.
-    pub fn create(comptime T: type, comptime name: []const u8) []const u8 {
-        const info = @typeInfo(T);
-        if (info != .@"struct") {
-            @compileError("Type of `T` must be a valid Model Structure");
-        }
+const Container = struct {
+    const sql =
+    \\  CREATE TABLE IF NOT EXISTS users (
+    \\      uuid BLOB PRIMARY KEY,
+    \\      name TEXT NOT NULL,
+    \\      name_opt TEXT,
+    \\      balance REAL NOT NULL,
+    \\      balance_opt REAL,
+    \\      age INTEGER NOT NULL,
+    \\      age_opt INTEGER,
+    \\      adult INTEGER NOT NULL,
+    \\      adult_opt INTEGER,
+    \\      gender INTEGER NOT NULL,
+    \\      gender_opt INTEGER,
+    \\      status TEXT NOT NULL,
+    \\      status_opt TEXT,
+    \\      bio BLOB NOT NULL,
+    \\      bio_opt BLOB,
+    \\      social TEXT NOT NULL,
+    \\      social_opt TEXT
+    \\  ) STRICT, WITHOUT ROWID;
+    ;
 
-        if (!@hasField(T, "uuid")) {
-            @compileError("Model Structure has no `uuid` field");
-        }
+    ///// # Generates `CREATE TABLE` SQL Statement
+    ///// **Remarks:** Return value must be freed by the `destroy()`
+    ///// - `comptime T` - Bind record structure
+    ///// - `name` - Container name e.g., `users`, `accounts` etc.
+    // pub fn create(comptime T: type, comptime name: []const u8) !void {
+    //     const info = @typeInfo(T);
+    //     if (info != .@"struct") {
+    //         @compileError("Type of `T` must be a valid Bind Structure");
+    //     }
 
-        comptime var fields: []const u8 = "";
-        inline for (info.@"struct".fields) |field| {
-            switch (@typeInfo(field.type)) {
-                .optional => |o| {
-                    fields = fields ++ comptime genToken(o.child, field.name, true);
-                },
-                else => {
-                    fields = fields ++ comptime genToken(field.type, field.name, false);
-                }
-            }
-        }
+    //     const sql_head = "CREATE TABLE IF NOT EXISTS " ++ name ++ " (";
 
-        const sql_head = "CREATE TABLE IF NOT EXISTS " ++ name ++ " (\n";
-        const sql_tail = "\n) STRICT, WITHOUT ROWID;";
-        const data = fields[0..fields.len - 2];
+    //     var tokens = ArrayList(u8).init(heap);
+    //     inline for (info.@"struct".fields) |field| {
+    //         try tokens.appendSlice(field.name);
+            
+    //         const f_info = @typeInfo(field.type) {
 
-        return fmt.comptimePrint("{s} {s} {s}", .{sql_head, data, sql_tail});
-    }
+    //         }
+    //     }
 
-    /// # Generates SQL Clause for a Given Field
-    /// **Remarks:** Compile time function e.g., `comptime getToken()`
-    fn genToken(T: type, field: []const u8, opt: bool) []const u8 {
-        switch (@typeInfo(T)) {
-            .bool, .int => {
-                if (opt) {
-                    const fmt_str = "\t{s} INTEGER NOT NULL,\n";
-                    return fmt.comptimePrint(fmt_str, .{field});
-                } else {
-                    const fmt_str = "\t{s} INTEGER,\n";
-                    return fmt.comptimePrint(fmt_str, .{field});
-                }
-            },
-            .float => {
-                if (opt) {
-                    const fmt_str = "\t{s} REAL NOT NULL,\n";
-                    return fmt.comptimePrint(fmt_str, .{field});
-                } else {
-                    const fmt_str = "\t{s} REAL,\n";
-                    return fmt.comptimePrint(fmt_str, .{field});
-                }
-            },
-            .@"struct" => {
-                // const child = sf.type;
-                if (@hasField(T, "int")) {
-                    if (opt) {
-                        const fmt_str = "\t{s} INTEGER NOT NULL,\n";
-                        return fmt.comptimePrint(fmt_str, .{field});
-                    } else {
-                        const fmt_str = "\t{s} INTEGER,\n";
-                        return fmt.comptimePrint(fmt_str, .{field});
-                    }
-                } else if (@hasField(T, "text")) {
-                    if (opt) {
-                        const fmt_str = "\t{s} TEXT NOT NULL,\n";
-                        return fmt.comptimePrint(fmt_str, .{field});
-                    } else {
-                        const fmt_str = "\t{s} TEXT,\n";
-                        return fmt.comptimePrint(fmt_str, .{field});
-                    }
-                } else if (@hasField(T, "blob")) {
-                    if (mem.eql(u8, field, "uuid")) {
-                        if (opt) @compileError("UUID Can't Be Optional")
-                        else {
-                            const fmt_str = "\t{s} BLOB PRIMARY KEY,\n";
-                            return fmt.comptimePrint(fmt_str, .{field});
-                        }
-                    } else {
-                        if (opt) {
-                            const fmt_str = "\t{s} BLOB NOT NULL,\n";
-                            return fmt.comptimePrint(fmt_str, .{field});
-                        } else {
-                            const fmt_str = "\t{s} BLOB,\n";
-                            return fmt.comptimePrint(fmt_str, .{field});
-                        }
-                    }
-                } else {
-                    @compileError("Unknown Field Name");
-                }
-            },
-            else => {
-                @compileError("Malformed Model Data Type");
-            }
-        }
-    }
+
+
+    //     const sql_tail = ") STRICT, WITHOUT ROWID;";
+    // }
 };
 
 /// # Generic Operator Type for Data Filtering
