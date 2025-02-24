@@ -26,8 +26,8 @@ pub fn main() !void {
     const heap = gpa_mem.allocator();
     _ = heap;
 
-    const query = Qb.Container.create(BindUser, "users");
-    std.debug.print("{s}\n", .{query});
+    const sql = Qb.Container.create(BindUser, "users");
+    std.debug.print("{s}\n", .{sql});
 
 
 

@@ -64,7 +64,7 @@ pub const Container = struct {
     fn genToken(T: type, field: []const u8, opt: bool) []const u8 {
         switch (@typeInfo(T)) {
             .bool, .int => {
-                if (opt) {
+                if (!opt) {
                     const fmt_str = "\t{s} INTEGER NOT NULL,\n";
                     return fmt.comptimePrint(fmt_str, .{field});
                 } else {
@@ -73,7 +73,7 @@ pub const Container = struct {
                 }
             },
             .float => {
-                if (opt) {
+                if (!opt) {
                     const fmt_str = "\t{s} REAL NOT NULL,\n";
                     return fmt.comptimePrint(fmt_str, .{field});
                 } else {
@@ -84,7 +84,7 @@ pub const Container = struct {
             .@"struct" => {
                 // const child = sf.type;
                 if (@hasField(T, "int")) {
-                    if (opt) {
+                    if (!opt) {
                         const fmt_str = "\t{s} INTEGER NOT NULL,\n";
                         return fmt.comptimePrint(fmt_str, .{field});
                     } else {
@@ -92,7 +92,7 @@ pub const Container = struct {
                         return fmt.comptimePrint(fmt_str, .{field});
                     }
                 } else if (@hasField(T, "text")) {
-                    if (opt) {
+                    if (!opt) {
                         const fmt_str = "\t{s} TEXT NOT NULL,\n";
                         return fmt.comptimePrint(fmt_str, .{field});
                     } else {
@@ -101,13 +101,14 @@ pub const Container = struct {
                     }
                 } else if (@hasField(T, "blob")) {
                     if (mem.eql(u8, field, "uuid")) {
-                        if (opt) @compileError("UUID Can't Be Optional")
-                        else {
+                        if (!opt) {
                             const fmt_str = "\t{s} BLOB PRIMARY KEY,\n";
                             return fmt.comptimePrint(fmt_str, .{field});
+                        } else {
+                            @compileError("UUID Can't Be Optional");
                         }
                     } else {
-                        if (opt) {
+                        if (!opt) {
                             const fmt_str = "\t{s} BLOB NOT NULL,\n";
                             return fmt.comptimePrint(fmt_str, .{field});
                         } else {
