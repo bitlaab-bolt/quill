@@ -1,28 +1,21 @@
-# Your Project Name Here - e.g., peacock
+# quill
 
-**Write your project description here...**
+**High-level SQLite Wrapper Written in Zig**
+
+Quill is an opinionated SQLite wrapper, focuses on performance and code efficiency. Quill provides a compile-time statement builder along with many builtin functionalities and a high-level **CRUD** interface for database activity.
+
+## Platform Support
+
+Quill has cross-platform support and compiles SQLite `amalgamation` files.
+
+## Dependency
+
+Quill has the following external dependency:
+
+- [Jsonic](https://bitlaabjsonic.web.app/)
+
+However, no additional step is required to use this project as a dependency.
 
 ## Documentation
 
-**Remarks:** Replace `.md` files on `docs` directory with your App documentation. [Install MkDocs](https://squidfunk.github.io/mkdocs-material/getting-started/) if not installed on your system. Edit `mkdocs.yml` file and remove this remark.
-
-For most up-to-date App documentation run:
-
-```sh
-mkdocs serve
-```
-
-## Powered by - canine
-
-**Cross-platform GUI framework for lightning fast App development.**
-
-**Platform Support:** As of now, Canine supports **Windows** (x64) and **MacOS** (Apple silicon).
-
-**Documentation:** For quick references and examples see - [Canine Documentation](https://bitlaabcanine.web.app/)
-
-
-# TODO
-
-A. string enum
-
-B. json string
+For most up-to-date documentation see - [**Quill Documentation**](https://bitlaabquill.web.app/).

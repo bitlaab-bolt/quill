@@ -2,13 +2,11 @@ site_name: quill v0.1.0
 site_url: http://127.0.0.1/
 nav:
   - Getting Started: index.md
-  - Directory Structure: structure.md
-  - App Documentation: documentation.md
-  - App Configuration: configuration.md
-  - Frontend Setup: frontend.md
-  - Backend Setup: backend.md
-  - API Reference: reference.md
-  - Code Examples: example.md
+  - How to Install: installation.md
+  - Data Types: types.md
+  - Statement Builder: builder.md
+  - How to Use: usage.md
+  - Developer Guide: guide.md
 markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true

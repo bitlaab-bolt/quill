@@ -5,6 +5,55 @@ const Dt = quill.Types;
 const Qb = quill.QueryBuilder;
 
 
+const Gender = enum { Male, Female };
+
+const Social = struct { website: []const u8, username: [] const u8 };
+
+pub const Model = struct {
+    uuid: Dt.CastInto(.Blob, Dt.Slice),
+    name1: Dt.CastInto(.Text, Dt.Slice),
+    name2: ?Dt.CastInto(.Text, Dt.Slice),
+    balance1: Dt.Float,
+    balance2: ?Dt.Float,
+    age1: Dt.Int,
+    age2: ?Dt.Int,
+    verified1: Dt.Bool,
+    verified2: ?Dt.Bool,
+    gender1: Dt.CastInto(.Int, Gender),
+    gender2: ?Dt.CastInto(.Int, Gender),
+    gender3: Dt.CastInto(.Text, Gender),
+    gender4: ?Dt.CastInto(.Text, Gender),
+    about1: Dt.CastInto(.Blob, Dt.Slice),
+    about2: ?Dt.CastInto(.Blob, Dt.Slice),
+    social1: Dt.CastInto(.Text, Social),
+    social2: ?Dt.CastInto(.Text, Social),
+    social3: Dt.CastInto(.Text, []const Social),
+    social4: ?Dt.CastInto(.Text, []const Social)
+};
+
+pub const View = struct {
+    uuid: Dt.Slice,
+    name1: Dt.Slice,
+    name2: ?Dt.Slice,
+    balance1: Dt.Float,
+    balance2: ?Dt.Float,
+    age1: Dt.Int,
+    age2: ?Dt.Int,
+    verified1: Dt.Bool,
+    verified2: ?Dt.Bool,
+    gender1: Dt.Any(Gender),
+    gender2: ?Dt.Any(Gender),
+    gender3: Dt.Any(Gender),
+    gender4: ?Dt.Any(Gender),
+    about1: Dt.Slice,
+    about2: ?Dt.Slice,
+    social1: Dt.Any(Social),
+    social2: ?Dt.Any(Social),
+    social3: Dt.Any([]const Social),
+    social4: ?Dt.Any([]const Social)
+};
+
+
 const BindUser = struct {
     uuid: Dt.CastInto(.Blob, []const u8),
     name: ?Dt.CastInto(.Text, []const u8),
@@ -14,6 +63,8 @@ const BindUser = struct {
 };
 
 const User = struct { name: Dt.Slice, age: Dt.Int };
+
+const FilterUser = struct { name: Dt.Slice, age: Dt.Int };
 
 const UpdateUser = struct {
     name: Dt.CastInto(.Text, []const u8),
@@ -26,81 +77,110 @@ pub fn main() !void {
     const heap = gpa_mem.allocator();
     _ = heap;
 
-    const sql = Qb.Container.create(BindUser, "users");
-    std.debug.print("{s}\n", .{sql});
 
+    const sql1 = comptime blk: {
+        var sql = Qb.Record.find(User, FilterUser, "users");
 
+        sql.dist();
+        sql.when(&.{
+            @TypeOf(sql).group(&.{
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!in", 10)
+                }),
+                @TypeOf(sql).chain(.AND),
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!=", null)
+                })
+            })
+        });
 
+        sql.sort(&.{.{.asc = "name" }, .{.desc = "age" }});
+        sql.limit(10);
+        sql.skip(12);
 
-    // var query = try Qb.Record.remove(heap, BindUser, "users", .Exact);
-    // defer query.destroy();
+        break :blk sql.statement();
+    };
 
-    // try query.when(&.{
-    //     try query.chain(.NOT),
-    //     try query.group(&.{
-    //         try query.filter("name", Qb.OpStr{.@"=" = "john"}),
-    //         try query.chain(.AND),
-    //         try query.filter("age", Qb.Op{.@"=" = 30}),
-    //     })
-    // });
+    std.debug.print("{s}\n", .{sql1});
 
+    const sql2 = comptime blk: {
+        var sql = Qb.Record.count(FilterUser, "users");
 
+        sql.when(&.{
+            @TypeOf(sql).group(&.{
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!in", 10)
+                }),
+                @TypeOf(sql).chain(.AND),
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!=", null)
+                })
+            })
+        });
 
+        break :blk sql.statement();
+    };
 
+    std.debug.print("{s}\n", .{sql2});
 
+    const sql3 = comptime blk: {
+        var sql = Qb.Record.create(BindUser, "users", .Default);
+        break :blk sql.statement();
+    };
 
+    std.debug.print("{s}\n", .{sql3});
 
+    const sql4 = comptime blk: {
+        var sql = Qb.Record.update(BindUser, FilterUser, "users", .Exact);
+        sql.when(&.{
+            @TypeOf(sql).group(&.{
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!in", 10)
+                }),
+                @TypeOf(sql).chain(.AND),
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!=", null)
+                })
+            })
+        });
 
+        break :blk sql.statement();
+    };
 
-    // var query = try Qb.Record.create(heap, BindUser, "users", .Replace);
-    // defer query.destroy();
+    std.debug.print("{s}\n", .{sql4});
 
-    // var query = try Qb.Record.count(heap, BindUser, "users");
-    // defer query.destroy();
+    const sql5 = comptime blk: {
+        var sql = Qb.Record.remove(FilterUser, "users", .Exact);
+        sql.when(&.{
+            @TypeOf(sql).group(&.{
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!in", 10)
+                }),
+                @TypeOf(sql).chain(.AND),
+                @TypeOf(sql).group(&.{
+                    @TypeOf(sql).filter("name", .@"!=", null),
+                    @TypeOf(sql).chain(.AND),
+                    @TypeOf(sql).filter("age", .@"!=", null)
+                })
+            })
+        });
 
-    // // inserts WHERE clause followed by the string
-    // try query.when(&.{
-    //     try query.chain(.NOT),
-    //     try query.group(&.{
-    //         try query.filter("name", Qb.OpStr{.@"=" = "john"}),
-    //         try query.chain(.AND),
-    //         try query.filter("age", Qb.Op{.@"=" = 30}),
-    //     })
-    // });
+        break :blk sql.statement();
+    };
 
-    // var query = try Qb.Record.find(heap, BindUser, User, "users");
-    // defer query.destroy();
-
-    // try query.unique();
-
-    // // inserts WHERE clause followed by the string
-    // try query.when(&.{
-    //     try query.chain(.NOT),
-    //     try query.group(&.{
-    //         try query.filter("name", Qb.OpStr{.@"=" = "john"}),
-    //         try query.chain(.AND),
-    //         try query.filter("age", Qb.Op{.@"=" = 30}),
-    //     })
-    // });
-
-    // try query.sort(&.{.{.asc = "name" }, .{.desc = "age" }});
-    // try query.limit(10);
-    // try query.skip(12);
-
-    // inserts WHERE NOT clause followed by the string
-    // query.except(&.{
-    //     query.group(&.{
-    //         query.filter(User.name, .{age}),
-    //         query.opt(.AND),
-    //         query.
-    //     })
-        
-    // });
-
-    // query.order()
-    // query.limit()
-    // query.ship()
-
-    // const sql = try query.build();
-    // std.log.warn("Generated:|{s}|\n", .{sql});
+    std.debug.print("{s}\n", .{sql5});
 }
