@@ -336,12 +336,12 @@ pub const Record = struct {
             pub fn new() Self { return Self {.cursor = 0}; }
 
             fn add(self: *Self, variant: T) !void {
-                const value = @intFromEnum(variant);
+                const value = @intFromEnum(variant) + 1;
                 if (!self.addable(variant)) {
                     return if (self.cursor == value) Error.DuplicateEntry
                     else Error.InvalidOrder;
                 } else {
-                    self.cursor = @intFromEnum(variant) + 1;
+                    self.cursor = value;
                 }
             }
 
@@ -452,10 +452,8 @@ pub const Record = struct {
             pub fn sort(self: *Self, order:[]const OrderBy) void {
                 self.seq.add(.OrderedBy) catch |err| {
                     const err_str = "Quill: Builder Function - {s}";
-                    @compileError(ctPrint(err_str, .{@tagName(err)}));
+                    @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
-                // if (self.seq == 2) self.seq += 1
-                // else @compileError("Quill: Invalid Function Chain");
 
                 const t = @TypeOf(Self.t_view);
                 const err_str = "Mismatched Filter Field Name `{s}`";
@@ -494,10 +492,8 @@ pub const Record = struct {
             pub fn limit(self: *Self, num: u32) void {
                 self.seq.add(.Limit) catch |err| {
                     const err_str = "Quill: Builder Function - {s}";
-                    @compileError(ctPrint(err_str, .{@tagName(err)}));
+                    @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
-                // if (self.seq == 3) self.seq += 1
-                // else @compileError("Quill: Invalid Function Chain");
 
                 const fmt_str = "\nLIMIT {d}";
                 self.stmt = self.stmt ++ ctPrint(fmt_str, .{num});
@@ -508,10 +504,8 @@ pub const Record = struct {
             pub fn skip(self: *Self, num: u32) void {
                 self.seq.add(.Offset) catch |err| {
                     const err_str = "Quill: Builder Function - {s}";
-                    @compileError(ctPrint(err_str, .{@tagName(err)}));
+                    @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
-                // if (self.seq == 4) self.seq += 1
-                // else @compileError("Quill: Invalid Function Chain");
 
                 const fmt_str = "\nOFFSET {d}";
                 self.stmt = self.stmt ++ ctPrint(fmt_str, .{num});
@@ -827,10 +821,8 @@ const Common = struct {
     pub fn when(self: anytype, tokens: []const Str) void {
         self.seq.add(.Where) catch |err| {
             const err_str = "Quill: Builder Function - {s}";
-            @compileError(ctPrint(err_str, .{@tagName(err)}));
+            @compileError(ctPrint(err_str, .{@errorName(err)}));
         };
-        // if (self.seq == 1) self.seq += 1
-        // else @compileError("Quill: Invalid Function Chain");
 
         var clause: Str = "";
         for (tokens) |token| clause = clause ++ token ++ " ";
