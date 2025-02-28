@@ -331,13 +331,18 @@ pub const Record = struct {
             cursor: u8,
 
             const Self = @This();
-            const Error = error { InvalidSequence };
+            const Error = error { InvalidOrder, DuplicateEntry };
 
             pub fn new() Self { return Self {.cursor = 0}; }
 
             fn add(self: *Self, variant: T) !void {
-                if (!self.addable(variant)) return Error.InvalidSequence
-                else self.cursor = @intFromEnum(variant) + 1;
+                const value = @intFromEnum(variant);
+                if (!self.addable(variant)) {
+                    return if (self.cursor == value) Error.DuplicateEntry
+                    else Error.InvalidOrder;
+                } else {
+                    self.cursor = @intFromEnum(variant) + 1;
+                }
             }
 
             fn addable(self: *Self, variant: T) bool {
@@ -400,8 +405,9 @@ pub const Record = struct {
             /// # Updates SQL Statement
             /// - Combines **DISTINCT** keyword to the existing statement
             pub fn dist(self: *Self) void {
-                self.seq.add(.Distinct) catch {
-                    @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.Distinct) catch |err| {
+                    const err_str = "Quill: Builder Function - {s}";
+                    @compileError(ctPrint(err_str, .{@tagName(err)}));
                 };
 
                 const sql = "SELECT DISTINCT";
@@ -444,8 +450,9 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **ORDER BY** clause
             pub fn sort(self: *Self, order:[]const OrderBy) void {
-                self.seq.add(.OrderedBy) catch {
-                    @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.OrderedBy) catch |err| {
+                    const err_str = "Quill: Builder Function - {s}";
+                    @compileError(ctPrint(err_str, .{@tagName(err)}));
                 };
                 // if (self.seq == 2) self.seq += 1
                 // else @compileError("Quill: Invalid Function Chain");
@@ -485,8 +492,9 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **LIMIT** clause
             pub fn limit(self: *Self, num: u32) void {
-                self.seq.add(.Limit) catch {
-                    @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.Limit) catch |err| {
+                    const err_str = "Quill: Builder Function - {s}";
+                    @compileError(ctPrint(err_str, .{@tagName(err)}));
                 };
                 // if (self.seq == 3) self.seq += 1
                 // else @compileError("Quill: Invalid Function Chain");
@@ -498,8 +506,9 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **OFFSET** clause
             pub fn skip(self: *Self, num: u32) void {
-                self.seq.add(.Offset) catch {
-                    @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.Offset) catch |err| {
+                    const err_str = "Quill: Builder Function - {s}";
+                    @compileError(ctPrint(err_str, .{@tagName(err)}));
                 };
                 // if (self.seq == 4) self.seq += 1
                 // else @compileError("Quill: Invalid Function Chain");
@@ -816,8 +825,9 @@ const Common = struct {
     /// # Generates SQL `WHERE` Statement form Given Tokens
     /// **Remarks:** Generic when function implementation
     pub fn when(self: anytype, tokens: []const Str) void {
-        self.seq.add(.Where) catch {
-            @compileError("Quill: Invalid Function Chain");
+        self.seq.add(.Where) catch |err| {
+            const err_str = "Quill: Builder Function - {s}";
+            @compileError(ctPrint(err_str, .{@tagName(err)}));
         };
         // if (self.seq == 1) self.seq += 1
         // else @compileError("Quill: Invalid Function Chain");
