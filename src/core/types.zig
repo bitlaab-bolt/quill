@@ -109,8 +109,6 @@ pub fn convertFrom(
     }
 
     const s_info = info.@"struct";
-    debug.assert(bind.parameterCount() == s_info.fields.len);
-
     inline for (s_info.fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);
         const value = @field(record, field.name);
@@ -121,6 +119,27 @@ pub fn convertFrom(
                 else try typeCast(heap, bind, pos, value.?, list);
             },
             else => try typeCast(heap, bind, pos, value, list)
+        }
+    }
+
+    const count = bind.parameterCount();
+    if (count != s_info.fields.len) {
+        if (count < s_info.fields.len) {
+            const err_str = "Missing Field Name `:{s}` on SQL Statement";
+            inline for (s_info.fields) |field| {
+                _ = bind.parameterIndex(":" ++ field.name) catch {
+                    @compileError(ctPrint(err_str, .{field.name}));
+                };
+            }
+        } else {
+            const name = bind.parameterName(s_info.fields.len);
+            const err_str = "Missing Field Name `:{s}` on `{s}`";
+            if (name) |v| {
+                std.log.err(err_str, .{v, @typeName(record)});
+                heap.free(v);
+            } else {
+                std.log.err("Parameter Index is Out of Range!", .{});
+            }
         }
     }
 }
@@ -249,6 +268,7 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
 
 /// # Cross Checks Column and Structure Fields
 fn matchRecord(col: *Column, fields: []const Type.StructField) bool {
+    // TODO: Show which field name is missing
     if (fields.len != col.count()) return false;
 
     var count: i32 = 0;

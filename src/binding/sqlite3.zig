@@ -210,10 +210,7 @@ pub fn prepareV3(db: Database, sql: []const u8) !STMT {
 //##############################################################################
 
 pub const Bind = struct {
-    const DataType = enum { Static, Dynamic };
-
-    var heap_ptr: ?*Allocator = null;
-
+    heap: Allocator,
     stmt: STMT,
 
     /// # Creates a Bind Interface for a Given STMT
@@ -232,6 +229,18 @@ pub const Bind = struct {
         const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
         return if (index == 0) Error.BindParameterNotFound
         else @intCast(index);
+    }
+
+    /// # **WARNING:** Return value must be freed by the caller
+    pub fn parameterName(self: *Bind, index: i32) !?[]const u8 {
+        const name = sqlite3.sqlite3_bind_parameter_name(self.stmt, index);
+
+        if (name == null) return null;
+
+        const tmp = mem.span(name);
+        const data = try self.heap.alloc(u8, tmp.len);
+        mem.copyForwards(u8, data, tmp);
+        return data;
     }
 
     /// # Binds **NULL** to Column Data

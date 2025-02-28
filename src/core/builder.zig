@@ -23,11 +23,13 @@ pub const Container = struct {
     pub fn create(comptime T: type, comptime name: Str) Str {
         const info = @typeInfo(T);
         if (info != .@"struct") {
-            @compileError("Quill: Type of `T` must be a Model Structure");
+            const err_str = "Quill: Type of `{s}` Must be a Model Structure";
+            @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         if (!@hasField(T, "uuid")) {
-            @compileError("Quill: Model Structure has no `uuid` field");
+            const err_str = "Quill: Model Structure `{s}` has no `uuid` Field";
+            @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         comptime var fields: Str = "";
@@ -56,6 +58,8 @@ pub const Container = struct {
     /// # Generates SQL Text for a Given Field
     /// **Remarks:** Compile time function e.g., `comptime getToken()`
     fn genToken(T: type, field: Str, opt: bool) Str {
+        const err_str = "Quill: Malformed Type `{s}`";
+
         switch (@typeInfo(T)) {
             .bool, .int => {
                 if (!opt) {
@@ -75,7 +79,11 @@ pub const Container = struct {
                     return ctPrint(fmt_str, .{field});
                 }
             },
-            .@"struct" => {
+            .@"struct" => |s| {
+                if (s.fields.len != 1) {
+                    @compileError(ctPrint(err_str, .{@typeName(T)}));
+                }
+
                 if (@hasField(T, "int")) {
                     if (!opt) {
                         const fmt_str = "\t{s} INTEGER NOT NULL,\n";
@@ -98,7 +106,7 @@ pub const Container = struct {
                             const fmt_str = "\t{s} BLOB PRIMARY KEY,\n";
                             return ctPrint(fmt_str, .{field});
                         } else {
-                            @compileError("Quill: UUID Can't Be Optional");
+                            @compileError("Quill: UUID Can't be Optional");
                         }
                     } else {
                         if (!opt) {
@@ -110,11 +118,13 @@ pub const Container = struct {
                         }
                     }
                 } else {
-                    @compileError("Quill: Unknown Field Name");
+                    const name = s.fields[0].name;
+                    const err_str2 = "Quill: Invalid Field Name `{s}` in `{s}`";
+                    @compileError(ctPrint(err_str2, .{name, @typeName(T)}));
                 }
             },
             else => {
-                @compileError("Quill: Malformed Model Data Type");
+                @compileError(ctPrint(err_str, .{@typeName(T)}));
             }
         }
     }
@@ -315,11 +325,13 @@ pub const Record = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn find(T: type, U: type, from: Str) Find(T, U) {
         if (@typeInfo(T) != .@"struct") {
-            @compileError("Quill: Type of `T` must be a View Structure");
+            const err_str = "Quill: Type of `{s}` Must be a View Structure";
+            @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         if (@typeInfo(U) != .void and @typeInfo(U) != .@"struct") {
-            @compileError("Quill: Type of `U` must be a Filter Structure");
+            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            @compileError(ctPrint(err_str, .{@typeName(U)}));
         }
 
         var tokens: Str = "";
@@ -397,12 +409,12 @@ pub const Record = struct {
 
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **ORDER BY** clause
-            /// TODO: specify for which field field mismatched
             pub fn sort(self: *Self, order:[]const OrderBy) void {
                 if (self.seq == 2) self.seq += 1
                 else @compileError("Quill: Invalid Function Chain");
 
                 const t = @TypeOf(Self.t_view);
+                const err_str = "Mismatched Filter Field Name `{s}`";
 
                 var clause: Str = "";
                 for (order) |field| {
@@ -413,7 +425,7 @@ pub const Record = struct {
                                     "{s} ASC, ", .{v}
                                 );
                             } else {
-                                @compileError("Mismatched Filter Field");
+                                @compileError(ctPrint(err_str, .{v}));
                             }
                         },
                         .desc => |v| {
@@ -422,7 +434,7 @@ pub const Record = struct {
                                     "{s} DESC, ", .{v}
                                 );
                             } else {
-                                @compileError("Mismatched Filter Field");
+                                @compileError(ctPrint(err_str, .{v}));
                             }
                         }
                     }
@@ -463,7 +475,8 @@ pub const Record = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn count(T: type, from: Str) Count(T) {
         if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
-            @compileError("Quill: Type of `T` must be a Filter Structure");
+            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            @compileError(ctPrint(err_str, .{@typeName(err_str)}));
         }
 
         const fmt_str = "SELECT COUNT(*) FROM {s}";
@@ -524,7 +537,8 @@ pub const Record = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn create(T: type, from: Str, act: Action) Create(T) {
         if (@typeInfo(T) != .@"struct") {
-            @compileError("Quill: Type of `T` must be a Model Structure");
+            const err_str = "Quill: Type of `{s}` Must be a Model Structure";
+            @compileError(ctPrint(err_str, .{@typeName(err_str)}));
         }
 
         const token = switch(act) {
@@ -573,11 +587,13 @@ pub const Record = struct {
     /// - `opt` - Record update option, Use `All` with **CAUTION**
     pub fn update(T: type, U: type, from: Str, opt: Constraint) Update(T, U) {
         if (@typeInfo(T) != .@"struct") {
-            @compileError("Quill: Type of `T` must be a Model Structure");
+            const err_str = "Quill: Type of `{s}` Must be a Model Structure";
+            @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         if (@typeInfo(U) != .void and @typeInfo(U) != .@"struct") {
-            @compileError("Quill: Type of `U` must be a Filter Structure");
+            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            @compileError(ctPrint(err_str, .{@typeName(U)}));
         }
 
         var tokens: Str = "";
@@ -656,6 +672,11 @@ pub const Record = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     /// - `opt` - Record delete option, Use `All` with **CAUTION**
     pub fn remove(T: type, from: Str, opt: Constraint) Remove(T) {
+        if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
+            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            @compileError(ctPrint(err_str, .{@typeName(T)}));
+        }
+
         const sql = ctPrint("DELETE FROM {s}", .{from});
         return Remove(T).create(sql, opt);
     }
@@ -726,8 +747,8 @@ const Common = struct {
     /// **Remarks:** Generic filter function implementation
     pub fn filter(T: type, field: Str, op: Operator, len: ?u8) Str {
         if (!@hasField(T, field)) {
-            const fmt_str = "Quill: Field `{s}` doesn't exist on `{s}`";
-            @compileError(ctPrint(fmt_str, .{field, @typeName(T)}));
+            const err_str = "Quill: Field `{s}` doesn't exist on `{s}`";
+            @compileError(ctPrint(err_str, .{field, @typeName(T)}));
         }
 
         return Operator.genToken(field, op, len);

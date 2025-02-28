@@ -39,21 +39,21 @@ TypeCasts a given data type into SQLite column data when evaluated.
 
 ```zig
 const Gender = enum { Male, Female };
-const Result = CastInfo(.Int, Gender);
+const Result = CastInto(.Int, Gender);
 ```
 
 **Example 02:** Converts `enum` data into a SQLite `Text` column.
 
 ```zig
 const Gender = enum { Male, Female };
-const Result = CastInfo(.Text, Gender);
+const Result = CastInto(.Text, Gender);
 ```
 
 **Example 03:** Converts `struct` data into a SQLite `Text` column.
 
 ```zig
 const User = struct { name: []const u8, age: u8 };
-const Result = CastInfo(.Text, User);
+const Result = CastInto(.Text, User);
 ```
 
 **Remarks:** As of now, `CastInto()` doesn't support `.Blob` conversion for user defined types.
@@ -128,7 +128,7 @@ pub const ViewUser = struct {
 
 ### Filter
 
-Contains limited number of type definitions that are automatically casts into SQL statement complaint data types. All available type combinations are:
+Contains limited number of type definitions that are automatically casts into SQL statement complaint values. All available type combinations are:
 
 ```zig title="schema/user.zig"
 pub const FilterUser = struct {
