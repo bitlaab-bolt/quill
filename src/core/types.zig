@@ -140,6 +140,8 @@ pub fn convertFrom(
             } else {
                 std.log.err("Parameter Index is Out of Range!", .{});
             }
+
+            return Error.MismatchedFields;
         }
     }
 }
