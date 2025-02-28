@@ -74,7 +74,6 @@ pub const ModelProfile = struct {
     verified1: Dt.Bool,
     about1: Dt.CastInto(.Blob, Dt.Slice),
 };
-
 ```
 
 ## Container
@@ -109,12 +108,12 @@ std.debug.print("{s}\n", .{sql});
 const sql = comptime blk: {
     var sql = Qb.Record.find(View, FilterProfile, "users");
     sql.when(&.{
-        @TypeOf(sql).filter("uuid", .@"=", null),
-        @TypeOf(sql).chain(.OR),
-        @TypeOf(sql).group(&.{
-            @TypeOf(sql).filter("name1", .contains, null),
-            @TypeOf(sql).chain(.OR),
-            @TypeOf(sql).filter("age1", .@"!=", null)
+        sql.filter("uuid", .@"=", null),
+        sql.chain(.OR),
+        sql.group(&.{
+            sql.filter("name1", .contains, null),
+            sql.chain(.OR),
+            sql.filter("age1", .@"!=", null)
         })
     });
 
@@ -147,7 +146,7 @@ std.debug.print("{s}\n", .{sql});
 const sql = comptime blk: {
     var sql = Qb.Record.count(FilterId, "users");
     sql.when(&.{
-        @TypeOf(sql).filter("uuid", .@"=", null)
+        sql.filter("uuid", .@"=", null)
     });
 
     break :blk sql.statement();
@@ -188,7 +187,7 @@ std.debug.print("{s}\n", .{sql});
 const sql = comptime blk: {
     var sql = Qb.Record.update(ModelProfile, FilterId, "users", .Exact);
     sql.when(&.{
-        @TypeOf(sql).filter("uuid", .@"=", null),
+        sql.filter("uuid", .@"=", null),
     });
 
     break :blk sql.statement();
@@ -215,7 +214,7 @@ std.debug.print("{s}\n", .{sql});
 const sql = comptime blk: {
     var sql = Qb.Record.remove(FilterId, "users", .Exact);
     sql.when(&.{
-        @TypeOf(sql).filter("uuid", .@"=", null),
+        sql.filter("uuid", .@"=", null),
     });
 
     break :blk sql.statement();

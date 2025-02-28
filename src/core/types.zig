@@ -36,16 +36,16 @@ pub const DataType = struct {
     pub const Float = f64;
     pub const Slice = []const u8;
 
-    /// # TypeCasts from SQlite `Integer`, `Text`, or `Blob` Data
+    const err_str = "Quill: Unsupported TypeCast of Type `{s}`";
+    const err_str2 = "Quill: Pointer Type of `{s}` Must be `[]const u8`";
+
+    /// # TypeCasts from SQLite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data retrieval
-    /// - `comptime T` - Given type must be an `enum`, `struct` or `[]const T`
+    /// - `T` - Given type must be an `enum`, `struct` or `[]const T`
     pub fn Any(comptime T: type) type {
         switch (@typeInfo(T)) {
             .@"enum", .@"struct", .pointer => return T,
-            else => {
-                const fmt_str = "Quill: Unsupported Type `{any}`";
-                @compileError(ctPrint(fmt_str, .{T}));
-            }
+            else => @compileError(ctPrint(err_str, .{@typeName(T)}))
         }
     }
 
@@ -59,10 +59,7 @@ pub const DataType = struct {
             .Int => {
                 switch (@typeInfo(T)) {
                     .@"enum" => return struct { int: T },
-                    else => {
-                        const fmt_str = "Quill: Unsupported Type Cast `{any}`";
-                        @compileError(ctPrint(fmt_str, .{T}));
-                    }
+                    else => @compileError(ctPrint(err_str, .{@typeName(T)}))
                 }
             },
             .Text => {
@@ -72,10 +69,7 @@ pub const DataType = struct {
                         constSlice(p);
                         return struct { text: T };
                     },
-                    else => {
-                        const fmt_str = "Quill: Unsupported Type Cast `{any}`";
-                        @compileError(ctPrint(fmt_str, .{T}));
-                    }
+                    else => @compileError(ctPrint(err_str, .{@typeName(T)}))
                 }
             },
             .Blob => {
@@ -83,15 +77,9 @@ pub const DataType = struct {
                     .pointer => |p| {
                         constSlice(p);
                         if (p.child == u8) return struct { blob: T }
-                        else {
-                            const fmt_str = "Quill: Pointer Type `{any}` Must be `[]const u8`";
-                            @compileError(ctPrint(fmt_str, .{T}));
-                        }
+                        else @compileError(ctPrint(err_str2, .{T}));
                     },
-                    else => {
-                        const fmt_str = "Quill: Unsupported Type Cast `{any}`";
-                        @compileError(ctPrint(fmt_str, .{T}));
-                    }
+                    else => @compileError(ctPrint(err_str, .{@typeName(T)}))
                 }
             }
         }
@@ -99,8 +87,8 @@ pub const DataType = struct {
 
     fn constSlice(ptr: Type.Pointer) void {
         if (!(ptr.is_const and ptr.size == .slice)) {
-            const fmt_str = "Quill: Pointer Type `{any}` Must be `[]const T`";
-            @compileError(ctPrint(fmt_str, .{ptr.child}));
+            const fmt_str = "Quill: Pointer Type `{s}` Must be `[]const T`";
+            @compileError(ctPrint(fmt_str, .{@typeName(ptr.child)}));
         }
     }
 };
@@ -116,8 +104,8 @@ pub fn convertFrom(
 ) !void {
     const info = @typeInfo(record);
     if (info != .@"struct") {
-        const fmt_str = "Quill: Type of `{any}` Must be a Struct";
-        @compileError(ctPrint(fmt_str, .{record}));
+        const fmt_str = "Quill: Type of `{s}` Must be a Struct";
+        @compileError(ctPrint(fmt_str, .{@typeName(record)}));
     }
 
     const s_info = info.@"struct";
@@ -146,9 +134,9 @@ fn typeCast(
     list: *ArrayList([]const u8),
 ) !void {
     const T = @TypeOf(value);
-    const fmt_str1 = "Quill: Unsupported Type Cast `{any}`";
-    const fmt_str2 = "Quill: Unexpected Type Cast `{any}`";
-    const fmt_str3 = "Quill: Field Type of `{any}` doesn't Exist on `DataType`";
+    const err_str1 = "Quill: Unsupported Type Cast `{s}`";
+    const err_str2 = "Quill: Unexpected Type Cast `{s}`";
+    const err_str3 = "Quill: Field Type of `{s}` doesn't Exist on `DataType`";
 
     switch (@typeInfo(T)) {
         .@"struct" => |s| {
@@ -163,7 +151,7 @@ fn typeCast(
                     } else if (@hasField(T, "text")) {
                         try bind.text(i, @tagName(child));
                     } else {
-                        @compileError(ctPrint(fmt_str1, .{T}));
+                        @compileError(ctPrint(err_str1, .{@typeName(T)}));
                     }
                 },
                 .@"struct" => {
@@ -172,7 +160,7 @@ fn typeCast(
                         try list.append(out);
                         try bind.text(i, out);
                     } else {
-                        @compileError(ctPrint(fmt_str1, .{T}));
+                        @compileError(ctPrint(err_str1, .{@typeName(T)}));
                     }
                 },
                 .pointer => |p| {
@@ -187,12 +175,17 @@ fn typeCast(
                         }
                     } else if (@hasField(T, "blob")) {
                         if (p.child == u8) try bind.blob(i, child)
-                        else @compileError(ctPrint(fmt_str2, .{p.child}));
+                        else {
+                            const t_name = @typeName(p.child);
+                            @compileError(ctPrint(err_str2, .{t_name}));
+                        }
                     }
-                    else @compileError(ctPrint(fmt_str1, .{T}));
+                    else {
+                        @compileError(ctPrint(err_str1, .{@typeName(T)}));
+                    }
                 },
                 else => {
-                    @compileError(ctPrint(fmt_str2, .{T}));
+                    @compileError(ctPrint(err_str2, .{@typeName(T)}));
                 }
             }
         },
@@ -211,7 +204,7 @@ fn typeCast(
                     try bind.double(i, value);
                 },
                 else => {
-                    @compileError(ctPrint(fmt_str3, .{T}));
+                    @compileError(ctPrint(err_str3, .{@typeName(T)}));
                 }
             }
         }
@@ -223,8 +216,8 @@ fn typeCast(
 pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     const info = @typeInfo(T);
     if (info != .@"struct") {
-        const fmt_str = "Quill: Type of `{any}` Must be a Struct";
-        @compileError(ctPrint(fmt_str, .{T}));
+        const fmt_str = "Quill: Type of `{s}` Must be a Struct";
+        @compileError(ctPrint(fmt_str, .{@typeName(T)}));
     }
 
     var dest: T = undefined;
@@ -278,7 +271,7 @@ fn typeConversion(
     comptime T: type,
     comptime tag: []const u8
 ) !void {
-    const fmt_str = "Quill: Field Type of `{any}` doesn't Exist on `DataType`";
+    const err_str = "Quill: Field Type of `{s}` doesn't Exist on `DataType`";
 
     switch (@typeInfo(T)) {
         .pointer => |p| {
@@ -374,7 +367,7 @@ fn typeConversion(
                     }
                 },
                 else => {
-                    @compileError(ctPrint(fmt_str, .{T}));
+                    @compileError(ctPrint(err_str, .{@TypeOf(T)}));
                 }
             }
         }
