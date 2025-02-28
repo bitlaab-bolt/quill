@@ -318,6 +318,35 @@ const ChainOperator = enum { AND, OR, NOT };
 pub const Record = struct {
     const Constraint = enum { All, Exact };
     const Action = enum { Default, Replace, Ignore };
+    const ChainClause = enum { Distinct, Where, OrderedBy, Limit, Offset };
+
+    /// # Ordered Function Execution
+    fn FnChain(comptime T: type) type {
+        if (@typeInfo(T) != .@"enum") {
+            const err_str = "Quill: `{s}` Must be an `enum` Type";
+            @compileError(ctPrint(err_str, .{@typeName(T)}));
+        }
+
+        return struct {
+            cursor: u8,
+
+            const Self = @This();
+            const Error = error { InvalidSequence };
+
+            pub fn new() Self { return Self {.cursor = 0}; }
+
+            fn add(self: *Self, variant: T) !void {
+                if (!self.addable(variant)) return Error.InvalidSequence
+                else self.cursor = @intFromEnum(variant) + 1;
+            }
+
+            fn addable(self: *Self, variant: T) bool {
+                const value = @intFromEnum(variant) + 1;
+                return if (self.cursor >= value) false else true;
+            }
+        };
+    }
+
 
     /// # Generates `SELECT` SQL Statement
     /// - `T` - Record View structure
@@ -359,8 +388,8 @@ pub const Record = struct {
             const t_view: T = mem.zeroes(T);
             const t_filter: U = mem.zeroes(U);
 
-            seq: u8 = 1,
             stmt: Str,
+            seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
 
             const Self = @This();
 
@@ -371,11 +400,16 @@ pub const Record = struct {
             /// # Updates SQL Statement
             /// - Combines **DISTINCT** keyword to the existing statement
             pub fn dist(self: *Self) void {
-                const sql = "SELECT DISTINCT";
-                const eql = mem.eql(u8, self.stmt[0..15], sql);
+                self.seq.add(.Distinct) catch {
+                    @compileError("Quill: Invalid Function Chain");
+                };
 
-                if (!eql and self.seq == 1) self.stmt = sql ++ self.stmt[6..]
-                else @compileError("Quill: Invalid Function Chain");
+                const sql = "SELECT DISTINCT";
+                // const eql = mem.eql(u8, self.stmt[0..15], sql);
+                self.stmt = sql ++ self.stmt[6..];
+
+                // if (!eql and self.seq == 1) self.stmt = sql ++ self.stmt[6..]
+                // else @compileError("Quill: Invalid Function Chain");
             }
 
             /// # Generates SQL Comparison Operator Token
@@ -410,8 +444,11 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **ORDER BY** clause
             pub fn sort(self: *Self, order:[]const OrderBy) void {
-                if (self.seq == 2) self.seq += 1
-                else @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.OrderedBy) catch {
+                    @compileError("Quill: Invalid Function Chain");
+                };
+                // if (self.seq == 2) self.seq += 1
+                // else @compileError("Quill: Invalid Function Chain");
 
                 const t = @TypeOf(Self.t_view);
                 const err_str = "Mismatched Filter Field Name `{s}`";
@@ -448,8 +485,11 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **LIMIT** clause
             pub fn limit(self: *Self, num: u32) void {
-                if (self.seq == 3) self.seq += 1
-                else @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.Limit) catch {
+                    @compileError("Quill: Invalid Function Chain");
+                };
+                // if (self.seq == 3) self.seq += 1
+                // else @compileError("Quill: Invalid Function Chain");
 
                 const fmt_str = "\nLIMIT {d}";
                 self.stmt = self.stmt ++ ctPrint(fmt_str, .{num});
@@ -458,8 +498,11 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **OFFSET** clause
             pub fn skip(self: *Self, num: u32) void {
-                if (self.seq == 4) self.seq += 1
-                else @compileError("Quill: Invalid Function Chain");
+                self.seq.add(.Offset) catch {
+                    @compileError("Quill: Invalid Function Chain");
+                };
+                // if (self.seq == 4) self.seq += 1
+                // else @compileError("Quill: Invalid Function Chain");
 
                 const fmt_str = "\nOFFSET {d}";
                 self.stmt = self.stmt ++ ctPrint(fmt_str, .{num});
@@ -773,8 +816,11 @@ const Common = struct {
     /// # Generates SQL `WHERE` Statement form Given Tokens
     /// **Remarks:** Generic when function implementation
     pub fn when(self: anytype, tokens: []const Str) void {
-        if (self.seq == 1) self.seq += 1
-        else @compileError("Quill: Invalid Function Chain");
+        self.seq.add(.Where) catch {
+            @compileError("Quill: Invalid Function Chain");
+        };
+        // if (self.seq == 1) self.seq += 1
+        // else @compileError("Quill: Invalid Function Chain");
 
         var clause: Str = "";
         for (tokens) |token| clause = clause ++ token ++ " ";
