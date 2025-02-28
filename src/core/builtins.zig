@@ -14,6 +14,7 @@ const Error = error { FailedIntegrityChecks };
 
 /// # Contains Record Related Functionalities
 pub const Record = struct {
+    /// TODO: OBsolte, count can generate the same statement when no filter
     /// # Returns Total Number of Records
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn countTotal(db: *quill, comptime from: []const u8) !usize {

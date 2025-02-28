@@ -15,7 +15,6 @@ SQLite database engine primarily stores data into the database file as `Integer`
 
 TypeCasts SQLite column data into a given data type when evaluated.
 
-
 **Example 01:** Converts `Text` data from a column into Zig's `struct`.
 
 ```zig
@@ -155,6 +154,10 @@ schema
 
 Create a `schema` directory in your project `src` directory. Within your schema directory create a file such as `user.zig` to represent a database container (Table). Now declare all of your Model, View, and Filter structure within this file.
 
+- Every file e.g., `user.zig` should contain a `Model` and `View` record structure for representing all the record fields in a container.
+- Any sub-structure should start with a `Model` or `View` for code clarity.
+- Use `Filter` with informative name e.g., `FilterProfile` for code clarity.
+
 ```zig title="user.zig"
 pub const Model = struct {
     uuid: Dt.CastInto(.Blob, Dt.Slice),
@@ -170,22 +173,17 @@ pub const View = struct {
     age: Dt.Int
 };
 
+pub const FilterId = struct { uuid: Dt.slice };
+
+pub const FilterProfile = struct { balance: Dt.Int, age: []const Dt.Int };
+
 pub const ModelProfile = struct {
     uuid: Dt.CastInto(.Blob, Dt.Slice),
     name: Dt.CastInto(.Text, Dt.Slice)
 };
 
-pub const FilterModelProfile = struct {
-    uuid: Dt.slice
-};
-
 pub const ViewProfile = struct {
     uuid: Dt.Slice,
     name: Dt.Slice,
-};
-
-pub const FilterViewProfile = struct {
-    balance: Dt.Int,
-    age: []const Dt.Int
 };
 ```

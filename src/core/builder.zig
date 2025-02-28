@@ -367,18 +367,25 @@ pub const Record = struct {
             }
 
             /// # Generates SQL Comparison Operator Token
-            pub fn filter(field: Str, op: Operator, len: ?u8) Str {
-                const t = @TypeOf(Self.t_filter);
+            pub fn filter(
+                self: *const Self,
+                field: Str,
+                op: Operator,
+                len: ?u8
+            ) Str {
+                const t = @TypeOf(@TypeOf(self.*).t_filter);
                 return Common.filter(t, field, op, len);
             }
 
             /// # Generates SQL Logical Operator Token
-            pub fn chain(op: ChainOperator) Str {
+            pub fn chain(self: *const Self, op: ChainOperator) Str {
+                _ = self;
                 return Common.chain(op);
             }
 
             /// # Combines Multiple Token as SQL Group
-            pub fn group(tokens: []const Str) Str {
+            pub fn group(self: *const Self, tokens: []const Str) Str {
+                _ = self;
                 return Common.group(tokens);
             }
 
@@ -390,6 +397,7 @@ pub const Record = struct {
 
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **ORDER BY** clause
+            /// TODO: specify for which field field mismatched
             pub fn sort(self: *Self, order:[]const OrderBy) void {
                 if (self.seq == 2) self.seq += 1
                 else @compileError("Quill: Invalid Function Chain");
@@ -478,18 +486,25 @@ pub const Record = struct {
             fn create(sql: Str) Self { return .{.stmt = sql}; }
 
             /// # Generates SQL Comparison Operator Token
-            pub fn filter(field: Str, op: Operator, len: ?u8) Str {
-                const t = @TypeOf(Self.t_filter);
+            pub fn filter(
+                self: *const Self,
+                field: Str,
+                op: Operator,
+                len: ?u8
+            ) Str {
+                const t = @TypeOf(@TypeOf(self.*).t_filter);
                 return Common.filter(t, field, op, len);
             }
 
             /// # Generates SQL Logical Operator Token
-            pub fn chain(op: ChainOperator) Str {
+            pub fn chain(self: *const Self, op: ChainOperator) Str {
+                _ = self;
                 return Common.chain(op);
             }
 
             /// # Combines Multiple Token as SQL Group
-            pub fn group(tokens: []const Str) Str {
+            pub fn group(self: *const Self, tokens: []const Str) Str {
+                _ = self;
                 return Common.group(tokens);
             }
 
@@ -595,16 +610,25 @@ pub const Record = struct {
             }
 
             /// # Generates SQL Comparison Operator Token
-            pub fn filter(field: Str, op: Operator, len: ?u8) Str {
-                const t = @TypeOf(Self.t_filter);
+            pub fn filter(
+                self: *const Self,
+                field: Str,
+                op: Operator,
+                len: ?u8
+            ) Str {
+                const t = @TypeOf(@TypeOf(self.*).t_filter);
                 return Common.filter(t, field, op, len);
             }
 
             /// # Generates SQL Logical Operator Token
-            pub fn chain(op: ChainOperator) Str { return Common.chain(op); }
+            pub fn chain(self: *const Self, op: ChainOperator) Str {
+                _ = self;
+                return Common.chain(op);
+            }
 
             /// # Combines Multiple Token as SQL Group
-            pub fn group(tokens: []const Str) Str {
+            pub fn group(self: *const Self, tokens: []const Str) Str {
+                _ = self;
                 return Common.group(tokens);
             }
 
@@ -654,16 +678,25 @@ pub const Record = struct {
             }
 
             /// # Generates SQL Comparison Operator Token
-            pub fn filter(field: Str, op: Operator, len: ?u8) Str {
-                const t = @TypeOf(Self.t_filter);
+            pub fn filter(
+                self: *const Self,
+                field: Str,
+                op: Operator,
+                len: ?u8
+            ) Str {
+                const t = @TypeOf(@TypeOf(self.*).t_filter);
                 return Common.filter(t, field, op, len);
             }
 
             /// # Generates SQL Logical Operator Token
-            pub fn chain(op: ChainOperator) Str { return Common.chain(op); }
+            pub fn chain(self: *const Self, op: ChainOperator) Str {
+                _ = self;
+                return Common.chain(op);
+            }
 
             /// # Combines Multiple Token as SQL Group
-            pub fn group(tokens: []const Str) Str {
+            pub fn group(self: *const Self, tokens: []const Str) Str {
+                _ = self;
                 return Common.group(tokens);
             }
 
@@ -694,7 +727,7 @@ const Common = struct {
     pub fn filter(T: type, field: Str, op: Operator, len: ?u8) Str {
         if (!@hasField(T, field)) {
             const fmt_str = "Quill: Field `{s}` doesn't exist on `{s}`";
-            @compileError(ctPrint(fmt_str, .{field, T}));
+            @compileError(ctPrint(fmt_str, .{field, @typeName(T)}));
         }
 
         return Operator.genToken(field, op, len);

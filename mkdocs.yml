@@ -5,6 +5,7 @@ nav:
   - How to Install: installation.md
   - Data Types: types.md
   - Statement Builder: builder.md
+  - Builtin Modules: builtins.md
   - How to Use: usage.md
   - Developer Guide: guide.md
 markdown_extensions:

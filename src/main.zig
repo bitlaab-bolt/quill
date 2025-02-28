@@ -4,9 +4,7 @@ const quill = @import("quill");
 const Dt = quill.Types;
 const Qb = quill.QueryBuilder;
 
-
 const Gender = enum { Male, Female };
-
 const Social = struct { website: []const u8, username: [] const u8 };
 
 pub const Model = struct {
@@ -53,22 +51,19 @@ pub const View = struct {
     social4: ?Dt.Any([]const Social)
 };
 
+pub const FilterId = struct { uuid: Dt.Slice };
 
-const BindUser = struct {
-    uuid: Dt.CastInto(.Blob, []const u8),
-    name: ?Dt.CastInto(.Text, []const u8),
-    username: Dt.CastInto(.Text, []const u8),
-    age: Dt.Int,
-    bio: Dt.CastInto(.Blob, []const u8)
+pub const FilterProfile = struct {
+    uuid: Dt.Slice,
+    name1: Dt.Slice,
+    age1: Dt.Int
 };
 
-const User = struct { name: Dt.Slice, age: Dt.Int };
-
-const FilterUser = struct { name: Dt.Slice, age: Dt.Int };
-
-const UpdateUser = struct {
-    name: Dt.CastInto(.Text, []const u8),
-    age: Dt.Int
+pub const ModelProfile = struct {
+    name1: Dt.CastInto(.Text, Dt.Slice),
+    age1: Dt.Int,
+    verified1: Dt.Bool,
+    about1: Dt.CastInto(.Blob, Dt.Slice),
 };
 
 pub fn main() !void {
@@ -77,110 +72,31 @@ pub fn main() !void {
     const heap = gpa_mem.allocator();
     _ = heap;
 
+    // const sql = comptime Qb.Container.create(Model, "users");
+    // std.debug.print("{s}\n", .{sql});
 
-    const sql1 = comptime blk: {
-        var sql = Qb.Record.find(User, FilterUser, "users");
+    // const sql = comptime blk: {
+    //     var sql = Qb.Record.create(Model, "users", .Default);
+    //     break :blk sql.statement();
+    // };
 
-        sql.dist();
+    // std.debug.print("{s}\n", .{sql});
+
+    const sql = comptime blk: {
+        var sql = Qb.Record.find(View, FilterId, "users");
         sql.when(&.{
-            @TypeOf(sql).group(&.{
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!in", 10)
-                }),
-                @TypeOf(sql).chain(.AND),
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!=", null)
-                })
-            })
-        });
-
-        sql.sort(&.{.{.asc = "name" }, .{.desc = "age" }});
-        sql.limit(10);
-        sql.skip(12);
-
-        break :blk sql.statement();
-    };
-
-    std.debug.print("{s}\n", .{sql1});
-
-    const sql2 = comptime blk: {
-        var sql = Qb.Record.count(FilterUser, "users");
-
-        sql.when(&.{
-            @TypeOf(sql).group(&.{
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!in", 10)
-                }),
-                @TypeOf(sql).chain(.AND),
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!=", null)
-                })
-            })
+            sql.filter("uuid", .@"=", null),
+            sql.chain(.AND)
         });
 
         break :blk sql.statement();
     };
 
-    std.debug.print("{s}\n", .{sql2});
-
-    const sql3 = comptime blk: {
-        var sql = Qb.Record.create(BindUser, "users", .Default);
-        break :blk sql.statement();
-    };
-
-    std.debug.print("{s}\n", .{sql3});
-
-    const sql4 = comptime blk: {
-        var sql = Qb.Record.update(BindUser, FilterUser, "users", .Exact);
-        sql.when(&.{
-            @TypeOf(sql).group(&.{
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!in", 10)
-                }),
-                @TypeOf(sql).chain(.AND),
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!=", null)
-                })
-            })
-        });
-
-        break :blk sql.statement();
-    };
-
-    std.debug.print("{s}\n", .{sql4});
-
-    const sql5 = comptime blk: {
-        var sql = Qb.Record.remove(FilterUser, "users", .Exact);
-        sql.when(&.{
-            @TypeOf(sql).group(&.{
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!in", 10)
-                }),
-                @TypeOf(sql).chain(.AND),
-                @TypeOf(sql).group(&.{
-                    @TypeOf(sql).filter("name", .@"!=", null),
-                    @TypeOf(sql).chain(.AND),
-                    @TypeOf(sql).filter("age", .@"!=", null)
-                })
-            })
-        });
-
-        break :blk sql.statement();
-    };
-
-    std.debug.print("{s}\n", .{sql5});
+    std.debug.print("{s}\n", .{sql});
 }
+
+
+// TODO: Try to solve @TypeOf(sql) problem
+// TODO: Add enum support on jsonic
+// Add comptime error info for clarity
+// make 0.3.0 version and publish
