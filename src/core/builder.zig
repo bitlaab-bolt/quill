@@ -167,31 +167,31 @@ const Operator = enum {
     fn genToken(field: Str, op: Operator, len: ?u8) Str {
         switch (op) {
             .@"=" => {
-                return ctPrint("{s} = :_{s}", .{field} ** 2);
+                return ctPrint("{s} = :_{s}_", .{field} ** 2);
             },
             .@"!=" => {
-                return ctPrint("{s} != :_{s}", .{field} ** 2);
+                return ctPrint("{s} != :_{s}_", .{field} ** 2);
             },
             .@">" => {
-                return ctPrint("{s} > :_{s}", .{field} ** 2);
+                return ctPrint("{s} > :_{s}_", .{field} ** 2);
             },
             .@"<" => {
-                return ctPrint("{s} < :_{s}", .{field} ** 2);
+                return ctPrint("{s} < :_{s}_", .{field} ** 2);
             },
             .@">=" => {
-                return ctPrint("{s} >= :_{s}", .{field} ** 2);
+                return ctPrint("{s} >= :_{s}_", .{field} ** 2);
             },
             .@"<=" => {
-                return ctPrint("{s} <= :_{s}", .{field} ** 2);
+                return ctPrint("{s} <= :_{s}_", .{field} ** 2);
             },
             .contains => {
-                return ctPrint("{s} LIKE :_{s}", .{field} ** 2);
+                return ctPrint("{s} LIKE %:_{s}_%", .{field} ** 2);
             },
             .@"!contains" => {
-                return ctPrint("{s} NOT LIKE :_{s}", .{field} ** 2);
+                return ctPrint("{s} NOT LIKE %:_{s}_%", .{field} ** 2);
             },
             .between => {
-                const fmt_str = "{s} BETWEEN :_{s}1 AND :_{s}2";
+                const fmt_str = "{s} BETWEEN :_{s}1_ AND :_{s}2_";
                 return ctPrint(fmt_str, .{field} ** 3);
             },
             .in => {
@@ -199,7 +199,7 @@ const Operator = enum {
 
                 comptime var params: Str = "";
                 for (1..len.? + 1) |i| {
-                    const parm = ctPrint(":_{s}{d}, ", .{field, i});
+                    const parm = ctPrint(":_{s}{d}_, ", .{field, i});
                     params = params ++ parm;
                 }
 
@@ -212,7 +212,7 @@ const Operator = enum {
 
                 comptime var params: Str = "";
                 for (1..len.? + 1) |i| {
-                    const parm = ctPrint(":_{s}{d}, ", .{field, i});
+                    const parm = ctPrint(":_{s}{d}_, ", .{field, i});
                     params = params ++ parm;
                 }
 
@@ -320,6 +320,13 @@ pub const Record = struct {
     const Action = enum { Default, Replace, Ignore };
     const ChainClause = enum { Distinct, Where, OrderedBy, Limit, Offset };
 
+    const OrderBy = union(enum) {
+        /// Ascending e.g., `A -> Z`, `1-100` etc.
+        ASC: Str,
+        /// Descending e.g., `Z -> A`, `100-1` etc.
+        DESC: Str
+    };
+
     /// # Ordered Function Execution
     fn FnChain(comptime T: type) type {
         if (@typeInfo(T) != .@"enum") {
@@ -383,13 +390,6 @@ pub const Record = struct {
     /// - `U` - Record Filter structure
     fn Find(T: type, U: type) type {
         return struct {
-            const OrderBy = union(enum) {
-                /// Ascending e.g., `A -> Z`, `1-100` etc.
-                asc: Str,
-                /// Descending e.g., `Z -> A`, `100-1` etc.
-                desc: Str
-            };
-
             const t_view: T = mem.zeroes(T);
             const t_filter: U = mem.zeroes(U);
 
@@ -461,7 +461,7 @@ pub const Record = struct {
                 var clause: Str = "";
                 for (order) |field| {
                     switch (field) {
-                        .asc => |v| {
+                        .ASC => |v| {
                             if (@hasField(t, v)) {
                                 clause = clause ++ ctPrint(
                                     "{s} ASC, ", .{v}
@@ -470,7 +470,7 @@ pub const Record = struct {
                                 @compileError(ctPrint(err_str, .{v}));
                             }
                         },
-                        .desc => |v| {
+                        .DESC => |v| {
                             if (@hasField(t, v)) {
                                 clause = clause ++ ctPrint(
                                     "{s} DESC, ", .{v}
@@ -580,17 +580,17 @@ pub const Record = struct {
 
     /// # Generates `INSERT` SQL Statement
     /// - `T` - Record Model structure
-    /// - `from` - Container name e.g., `users`, `accounts` etc.
-    pub fn create(T: type, from: Str, act: Action) Create(T) {
+    /// - `to` - Container name e.g., `users`, `accounts` etc.
+    pub fn create(T: type, to: Str, act: Action) Create(T) {
         if (@typeInfo(T) != .@"struct") {
             const err_str = "Quill: Type of `{s}` Must be a Model Structure";
             @compileError(ctPrint(err_str, .{@typeName(err_str)}));
         }
 
         const token = switch(act) {
-            .Default => ctPrint("INSERT INTO {s}", .{from}),
-            .Replace => ctPrint("INSERT OR REPLACE INTO {s}", .{from}),
-            .Ignore => ctPrint("INSERT OR IGNORE INTO {s}", .{from})
+            .Default => ctPrint("INSERT INTO {s}", .{to}),
+            .Replace => ctPrint("INSERT OR REPLACE INTO {s}", .{to}),
+            .Ignore => ctPrint("INSERT OR IGNORE INTO {s}", .{to})
         };
 
         var fields: Str = "";
@@ -629,9 +629,9 @@ pub const Record = struct {
     /// # Generates `UPDATE` SQL Statement
     /// - `T` - Record Model structure
     /// - `U` - Record Filter structure
-    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    /// - `to` - Container name e.g., `users`, `accounts` etc.
     /// - `opt` - Record update option, Use `All` with **CAUTION**
-    pub fn update(T: type, U: type, from: Str, opt: Constraint) Update(T, U) {
+    pub fn update(T: type, U: type, to: Str, opt: Constraint) Update(T, U) {
         if (@typeInfo(T) != .@"struct") {
             const err_str = "Quill: Type of `{s}` Must be a Model Structure";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
@@ -648,7 +648,7 @@ pub const Record = struct {
         }
 
         const data = tokens[0..tokens.len - 2];
-        const sql = ctPrint("UPDATE {s}\nSET {s}", .{from, data});
+        const sql = ctPrint("UPDATE {s}\nSET {s}", .{to, data});
         return Update(T, U).create(sql, opt);
     }
 
@@ -792,6 +792,11 @@ const Common = struct {
     /// # Generates SQL Comparison Operator Token
     /// **Remarks:** Generic filter function implementation
     pub fn filter(T: type, field: Str, op: Operator, len: ?u8) Str {
+        if (@typeInfo(T) == .void) {
+            const err_str = "Quill: Filter Structure can't be `void`";
+            @compileError(ctPrint(err_str, .{}));
+        }
+
         if (!@hasField(T, field)) {
             const err_str = "Quill: Field `{s}` doesn't exist on `{s}`";
             @compileError(ctPrint(err_str, .{field, @typeName(T)}));

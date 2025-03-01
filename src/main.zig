@@ -7,9 +7,9 @@ const Uuid = quill.Uuid;
 
 pub const Model = struct {
     uuid: Dt.CastInto(.Blob, Dt.Slice),
-    // name: Dt.CastInto(.Text, Dt.Slice),
+    name: Dt.CastInto(.Text, Dt.Slice),
     balance: Dt.Float,
-    // age: Dt.Int,
+    age: Dt.Int,
 };
 
 pub const View = struct {
@@ -18,6 +18,10 @@ pub const View = struct {
     balance: Dt.Float,
     age: Dt.Int,
 };
+
+const FilterId = struct { uuid: Dt.Slice };
+
+const FilterAge = struct { age: Dt.Int };
 
 pub fn main() !void {
     var gpa_mem = std.heap.GeneralPurposeAllocator(.{}){};
@@ -30,34 +34,53 @@ pub fn main() !void {
     var db = try Quill.open(heap, "hello.db");
     defer db.close();
 
-    const sql = comptime Qb.Container.create(Model, "account");
-    // std.debug.print("{s}\n", .{sql});
-    var result = try db.exec(sql);
+    // Creates users table
+    const table_sql = comptime Qb.Container.create(Model, "users");
+    var result = try db.exec(table_sql);
     result.destroy();
 
-    // // var result = try db.exec(sql);
-    // // result.destroy();
+    const create_sql = comptime blk: {
+        var sql = Qb.Record.create(View, "users", .Default);
+        // sql.when(&.{
+        //     sql.filter("uuid", .@"=", null),
+        //     sql.chain(.AND)
+        // });
 
-    const insert_sql =
-        \\  INSERT INTO account (uuid, name, balance, age)
-        \\  VALUES (:uuid, :name, :balance, :age);
-    ;
+        break :blk sql.statement();
+    };
 
-    std.debug.print("{s}\n", .{db.errMsg()});
-
-    var crud = try db.prepare(insert_sql);
+    var crud = try db.prepare(create_sql);
     defer crud.destroy();
 
-    std.debug.print("{s}\n", .{db.errMsg()});
-
-    const id = Uuid.new();
-
     const model = Model{
-        .uuid = .{ .blob = &id },
-        // .name = .{ .text = "sabbir" },
-        // .age = 25,
+        .uuid = .{ .blob = &Uuid.new() },
+        .name = .{ .text = "John Doe" },
+        .age = 20,
         .balance = 200.0,
     };
 
     try crud.exec(model, null);
+
+    // Find users data
+    const find_sql = comptime blk: {
+        var sql = Qb.Record.find(View, FilterAge, "users");
+        sql.when(&.{
+            sql.filter("age", .@"=", null)
+        });
+
+        sql.sort(&.{.{.ASC = "age" }});
+
+        break :blk sql.statement();
+    };
+
+    std.debug.print("{s}\n", .{find_sql});
+
+    var crud2 = try db.prepare(find_sql);
+    defer crud2.destroy();
+
+    const filter = FilterAge { .age = 2 };
+
+    const result2 = try crud2.readOne(View, filter);
+    defer crud2.free(result2);
+    std.debug.print("{any}\n", .{result2});
 }

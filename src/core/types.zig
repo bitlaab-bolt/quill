@@ -94,6 +94,79 @@ pub const DataType = struct {
     }
 };
 
+// Bind record filter data
+pub fn bindFilterData(
+    heap: Allocator,
+    list: *ArrayList([]const u8),
+    bind: *Bind,
+    filter: anytype
+) !void {
+    const info = @typeInfo(@TypeOf(filter));
+    if (info != .@"struct") {
+        const err_str = "Quill: Type of `{s}` Must be a Struct";
+        @compileError(ctPrint(err_str, .{@typeName(filter)}));
+    }
+
+    const s_info = info.@"struct";
+    //const count = bind.parameterCount();
+
+    inline for (s_info.fields) |field| {
+        const value = @field(filter, field.name);
+
+        switch (@typeInfo(field.type)) {
+            .int => |n| {
+                if (n.signedness == .signed and n.bits == 64) {
+                    const param = ":_" ++ field.name ++ "_";
+                    const pos = try bind.parameterIndex(param);
+                    try typeCast(heap, bind, pos, value, list);
+                } else {
+                    @compileError("Use `i64` Instead");
+                }
+            },
+            .pointer => |p| {
+                switch (getFilterType(p)) {
+                    .Text => {
+                        const param = ":_" ++ field.name ++ "_";
+                        const pos = try bind.parameterIndex(param);
+                        try typeCast(heap, bind, pos, value, list);
+                    },
+                    .IntList, .TextList => {
+                        for (value.items, 0..value.items.len) |item, i| {
+                            const fmt_str = ":_" ++ field.name ++ "{s}_";
+
+                            // e.g., `:_name999_` max limit is 999
+                            var buff: [fmt_str.len]u8 = undefined;
+                            const tag = try fmt.bufPrint(&buff, fmt_str, .{i});
+                            const pos = try bind.parameterIndex(tag);
+                            try typeCast(heap, bind, pos, item, list);
+                        }
+                    }
+                }
+            },
+            else => {
+                const f_name = @tagName(field.type);
+                const t_name = @tagName(@TypeOf(filter));
+                const err_str = "Quill: Invalid Filter Type `{s}` on `{s}`";
+                @compileError(ctPrint(err_str, .{f_name, t_name}));
+            }
+        }
+    }
+}
+
+const FilterType = enum { Text, IntList, TextList };
+
+fn getFilterType(ptr: Type.Pointer) FilterType {
+    DataType.constSlice(ptr);
+    return switch (ptr.child) {
+        u8 => .Text,
+        i64 => .IntList,
+        []const u8 => .TextList,
+        else => @compileError("Use `u8`, `i64` or `[]const u8` Slices Instead")
+    };
+}
+
+
+
 /// # Converts Field Data from the Given Record Structure
 /// **Remarks:** Intended for internal use only
 pub fn convertFrom(
@@ -109,36 +182,36 @@ pub fn convertFrom(
     }
 
     const s_info = info.@"struct";
-    const count = bind.parameterCount();
+    // const count = bind.parameterCount();
 
-    if (count != s_info.fields.len) {
-        const t_name = @typeName(@TypeOf(record));
+    // if (count != s_info.fields.len) {
+    //     const t_name = @typeName(@TypeOf(record));
 
-        if (count < s_info.fields.len) {
-            const err_str = "Missing `{s}` from `{s}` on SQL Statement";
-            inline for (s_info.fields) |field| {
-                _ = bind.parameterIndex(":" ++ field.name) catch {
-                    log.warn(err_str, .{field.name, t_name});
-                };
-            }
-        } else {
-            const err_str = "Missing `{s}` on `{s}` from SQL Statement";
-            for (0..@intCast(count)) |i| {
-                const pos = @as(i32, @intCast(i)) + 1;
-                const name = (try bind.parameterName(pos)).?;
-                defer heap.free(name);
+    //     if (count < s_info.fields.len) {
+    //         const err_str = "Missing `{s}` from `{s}` on SQL Statement";
+    //         inline for (s_info.fields) |field| {
+    //             _ = bind.parameterIndex(":" ++ field.name) catch {
+    //                 log.warn(err_str, .{field.name, t_name});
+    //             };
+    //         }
+    //     } else {
+    //         const err_str = "Missing `{s}` on `{s}` from SQL Statement";
+    //         for (0..@intCast(count)) |i| {
+    //             const pos = @as(i32, @intCast(i)) + 1;
+    //             const name = (try bind.parameterName(pos)).?;
+    //             defer heap.free(name);
 
-                var exist: bool = false;
-                inline for (s_info.fields) |field| {
-                    if (mem.eql(u8, name, ":" ++ field.name)) exist = true;
-                }
+    //             var exist: bool = false;
+    //             inline for (s_info.fields) |field| {
+    //                 if (mem.eql(u8, name, ":" ++ field.name)) exist = true;
+    //             }
 
-                if (!exist) log.warn(err_str, .{name, t_name});
-            }
-        }
+    //             if (!exist) log.warn(err_str, .{name, t_name});
+    //         }
+    //     }
 
-        return Error.MismatchedFields;
-    }
+    //     return Error.MismatchedFields;
+    // }
 
     inline for (s_info.fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);

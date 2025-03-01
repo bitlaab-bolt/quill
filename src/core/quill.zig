@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log;
 const mem = std.mem;
 const debug = std.debug;
 const ArrayList = std.ArrayList;
@@ -63,7 +64,10 @@ pub fn exec(self: *Self, sql: []const u8) !ExecResult {
 
 /// # Compiles SQL Text into Byte-Code
 pub fn prepare(self: *Self, sql: []const u8) !CRUD {
-    const stmt = try sqlite3.prepareV3(self.instance, sql);
+    const stmt = sqlite3.prepareV3(self.instance, sql) catch |err| {
+        log.warn("{s}", .{self.errMsg()});
+        return err;
+    };
     return CRUD.create(self.heap, stmt);
 }
 
@@ -91,7 +95,7 @@ pub const CRUD = struct {
     /// # Destroys the Interface
     pub fn destroy(self: *CRUD) void {
         sqlite3.finalize(self.stmt) catch |err| {
-            std.log.err("{s}\n", .{@errorName(err)});
+            log.err("{s}\n", .{@errorName(err)});
         };
     }
 
@@ -103,8 +107,8 @@ pub const CRUD = struct {
             .@"struct" => {
                 release(self.heap, result);
             },
-            .optional => |o| {
-                if (@typeInfo(o.child) == .null) return;
+            .optional => {
+                if (result == null) return;
                 release(self.heap, result.?);
             },
             .pointer => |p| {
@@ -157,10 +161,31 @@ pub const CRUD = struct {
         }
     }
 
+    fn bindFilter(self: *CRUD, filter: anytype) !void {
+        _ = self;
+        _ = filter;
+    }
+
     /// # Retrieves a Single (Record) Query Result
     /// **Remarks:** For multiple records only the first one is retrieved
-    /// - `T` - A structure that contains all record fields
-    pub fn readOne(self: *CRUD, comptime T: type) !?T {
+    /// - `T` - Record View structure
+    pub fn readOne(self: *CRUD, comptime T: type, filter: anytype) !?T {
+        // TODO: pass filter as anytype
+        // if not null then bind vy type.bindFilterData
+        std.debug.print("working until now\n", .{});
+        // only when filter data is present
+        var list = ArrayList([]const u8).init(self.heap);
+        defer {
+            for (list.items) |item| self.heap.free(item);
+            list.deinit();
+        }
+
+        var params = sqlite3.Bind.init(self.heap, self.stmt);
+        try types.bindFilterData(self.heap, &list, &params, filter);
+
+
+
+
         if (try sqlite3.step(self.stmt) == .Done) return null;
 
         var column = sqlite3.Column.init(self.heap, self.stmt);
@@ -171,7 +196,7 @@ pub const CRUD = struct {
     /// **Remarks:** Use this when record limits are known. Use `readNext()`
     /// for progressive retrieval of unknown number of records.
     ///
-    /// - `T` - A structure that contains all record fields
+    /// - `T` - Record View structure
     ///
     /// **WARNING:** Return value must be freed by the caller
     pub fn readMany(self: *CRUD, comptime T: type) ![]const T {

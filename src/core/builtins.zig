@@ -26,11 +26,12 @@ pub const Record = struct {
     }
 
     /// # Returns Total Number of Matching Records
-    /// - `from` - Container name e.g., `users`, `accounts` etc.
-    pub fn count(db: *quill, sql: []const u8, from: []const u8) !usize {
-        _ = db;
-        _ = sql;
-        _ = from;
+    pub fn count(db: *quill, sql: []const u8) !usize {
+        var result = try db.exec(sql);
+        defer result.destroy();
+
+        const field = result.next().?[0];
+        return try fmt.parseInt(usize, field.data, 10);
     }
 };
 

@@ -3,8 +3,8 @@
     .version = "0.1.0",
     .dependencies = .{
         .jsonic = .{
-            .url = "https://github.com/bitlaab-bolt/jsonic/archive/refs/tags/v0.2.0.zip",
-            .hash = "12204577154fd0b178bd93e0ae169447ee2591f902d382e66b4bb4feb58af8fb661b",
+            .url = "https://github.com/bitlaab-bolt/jsonic/archive/refs/tags/v0.2.5.zip",
+            .hash = "12202925e3a35bed5641c98f5e149c1c95b5fae7a761b69e286da51c2e63d7ee841c",
         },
     },
     .paths = .{
