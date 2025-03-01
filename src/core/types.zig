@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const fmt = std.fmt;
+const log = std.log;
 const mem = std.mem;
 const debug = std.debug;
 const Type = std.builtin.Type;
@@ -95,20 +96,50 @@ pub const DataType = struct {
 
 /// # Converts Field Data from the Given Record Structure
 /// **Remarks:** Intended for internal use only
-/// TODO: show mitch match fields name when assert of field len failed
 pub fn convertFrom(
     heap: Allocator,
     list: *ArrayList([]const u8),
     bind: *Bind,
     record: anytype
 ) !void {
-    const info = @typeInfo(record);
+    const info = @typeInfo(@TypeOf(record));
     if (info != .@"struct") {
         const fmt_str = "Quill: Type of `{s}` Must be a Struct";
         @compileError(ctPrint(fmt_str, .{@typeName(record)}));
     }
 
     const s_info = info.@"struct";
+    const count = bind.parameterCount();
+
+    if (count != s_info.fields.len) {
+        const t_name = @typeName(@TypeOf(record));
+
+        if (count < s_info.fields.len) {
+            const err_str = "Missing `{s}` from `{s}` on SQL Statement";
+            inline for (s_info.fields) |field| {
+                _ = bind.parameterIndex(":" ++ field.name) catch {
+                    log.warn(err_str, .{field.name, t_name});
+                };
+            }
+        } else {
+            const err_str = "Missing `{s}` on `{s}` from SQL Statement";
+            for (0..@intCast(count)) |i| {
+                const pos = @as(i32, @intCast(i)) + 1;
+                const name = (try bind.parameterName(pos)).?;
+                defer heap.free(name);
+
+                var exist: bool = false;
+                inline for (s_info.fields) |field| {
+                    if (mem.eql(u8, name, ":" ++ field.name)) exist = true;
+                }
+
+                if (!exist) log.warn(err_str, .{name, t_name});
+            }
+        }
+
+        return Error.MismatchedFields;
+    }
+
     inline for (s_info.fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);
         const value = @field(record, field.name);
@@ -119,29 +150,6 @@ pub fn convertFrom(
                 else try typeCast(heap, bind, pos, value.?, list);
             },
             else => try typeCast(heap, bind, pos, value, list)
-        }
-    }
-
-    const count = bind.parameterCount();
-    if (count != s_info.fields.len) {
-        if (count < s_info.fields.len) {
-            const err_str = "Missing Field Name `:{s}` on SQL Statement";
-            inline for (s_info.fields) |field| {
-                _ = bind.parameterIndex(":" ++ field.name) catch {
-                    @compileError(ctPrint(err_str, .{field.name}));
-                };
-            }
-        } else {
-            const name = bind.parameterName(s_info.fields.len);
-            const err_str = "Missing Field Name `:{s}` on `{s}`";
-            if (name) |v| {
-                std.log.err(err_str, .{v, @typeName(record)});
-                heap.free(v);
-            } else {
-                std.log.err("Parameter Index is Out of Range!", .{});
-            }
-
-            return Error.MismatchedFields;
         }
     }
 }

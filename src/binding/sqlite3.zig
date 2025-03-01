@@ -215,9 +215,8 @@ pub const Bind = struct {
 
     /// # Creates a Bind Interface for a Given STMT
     /// - No resource clean up is required for this initiation
-    pub fn init(heap: *Allocator, stmt: STMT) Bind {
-        Bind.heap_ptr = heap;
-        return .{.stmt = stmt};
+    pub fn init(heap: Allocator, stmt: STMT) Bind {
+        return .{.heap = heap, .stmt = stmt};
     }
 
     pub fn parameterCount(self: *Bind) i32 {

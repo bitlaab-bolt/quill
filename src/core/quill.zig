@@ -193,7 +193,7 @@ pub const CRUD = struct {
             list.deinit();
         }
 
-        var params = sqlite3.Bind.init(&self.heap, self.stmt);
+        var params = sqlite3.Bind.init(self.heap, self.stmt);
         try types.convertFrom(self.heap, &list, &params, record);
     }
 
@@ -208,7 +208,7 @@ pub const CRUD = struct {
             list.deinit();
         }
 
-        var params = sqlite3.Bind.init(&self.heap, self.stmt);
+        var params = sqlite3.Bind.init(self.heap, self.stmt);
         try types.convertFrom(self.heap, &list, &params, record);
 
         const result = try sqlite3.step(self.stmt);
