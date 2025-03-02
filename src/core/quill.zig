@@ -173,15 +173,12 @@ pub const CRUD = struct {
         // TODO: pass filter as anytype
         // if not null then bind vy type.bindFilterData
         std.debug.print("working until now\n", .{});
-        // only when filter data is present
-        var list = ArrayList([]const u8).init(self.heap);
-        defer {
-            for (list.items) |item| self.heap.free(item);
-            list.deinit();
-        }
 
-        var params = sqlite3.Bind.init(self.heap, self.stmt);
-        try types.bindFilterData(self.heap, &list, &params, filter);
+        // only when filter data != null
+        if (filter != null) {
+            var params = sqlite3.Bind.init(self.heap, self.stmt);
+            try types.bindFilterData(&params, filter);
+        }
 
 
 
@@ -274,5 +271,5 @@ pub const CRUD = struct {
 // TODO
 // For streaming large binary object from database
 pub const Stream = struct {
-
+    
 };

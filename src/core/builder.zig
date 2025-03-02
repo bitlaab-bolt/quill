@@ -147,10 +147,13 @@ const Operator = enum {
     /// Checks - Less Than or Equal To
     @"<=",
     /// Checks - Pattern Matching
+    /// - You must include regex patter on your input data e.g., `%John Doe%`
     contains,
     /// Checks - Pattern Matching
+    /// - You must include regex patter on your input data e.g., `%John Doe%`
     @"!contains",
     /// Checks - Between Values
+    /// Your input data slice should be length of 2. e.g., `&.{10, 20}`
     between,
     /// Checks - In List of Values
     in,
@@ -185,10 +188,10 @@ const Operator = enum {
                 return ctPrint("{s} <= :_{s}_", .{field} ** 2);
             },
             .contains => {
-                return ctPrint("{s} LIKE %:_{s}_%", .{field} ** 2);
+                return ctPrint("{s} LIKE :_{s}_", .{field} ** 2);
             },
             .@"!contains" => {
-                return ctPrint("{s} NOT LIKE %:_{s}_%", .{field} ** 2);
+                return ctPrint("{s} NOT LIKE :_{s}_", .{field} ** 2);
             },
             .between => {
                 const fmt_str = "{s} BETWEEN :_{s}1_ AND :_{s}2_";
@@ -233,68 +236,68 @@ const Operator = enum {
         // Testing Equality
         {
             const token = comptime genToken("name", .@"=", null);
-            try testing.expect(mem.eql(u8, token, "name = :_name"));
+            try testing.expect(mem.eql(u8, token, "name = :_name_"));
         }
 
         // Testing Inequality
         {
             const token = comptime genToken("name", .@"!=", null);
-            try testing.expect(mem.eql(u8, token, "name != :_name"));
+            try testing.expect(mem.eql(u8, token, "name != :_name_"));
         }
 
         // Testing Greater Than
         {
             const token = comptime genToken("name", .@">", null);
-            try testing.expect(mem.eql(u8, token, "name > :_name"));
+            try testing.expect(mem.eql(u8, token, "name > :_name_"));
         }
 
         // Testing Less Than
         {
             const token = comptime genToken("name", .@"<", null);
-            try testing.expect(mem.eql(u8, token, "name < :_name"));
+            try testing.expect(mem.eql(u8, token, "name < :_name_"));
         }
 
         // Testing Greater Than or Equal To
         {
             const token = comptime genToken("name", .@">=", null);
-            try testing.expect(mem.eql(u8, token, "name >= :_name"));
+            try testing.expect(mem.eql(u8, token, "name >= :_name_"));
         }
 
         // Testing Less Than or Equal To
         {
             const token = comptime genToken("name", .@"<=", null);
-            try testing.expect(mem.eql(u8, token, "name <= :_name"));
+            try testing.expect(mem.eql(u8, token, "name <= :_name_"));
         }
 
         // Testing Contains (Pattern Matching)
         {
             const token = comptime genToken("name", .contains, null);
-            try testing.expect(mem.eql(u8, token, "name LIKE :_name"));
+            try testing.expect(mem.eql(u8, token, "name LIKE :_name_"));
         }
 
         // Testing Not Contains (Pattern Matching)
         {
             const token = comptime genToken("name", .@"!contains", null);
-            try testing.expect(mem.eql(u8, token, "name NOT LIKE :_name"));
+            try testing.expect(mem.eql(u8, token, "name NOT LIKE :_name_"));
         }
 
         // Testing Between Values
         {
-            const ok_str = "name BETWEEN :_name1 AND :_name2";
+            const ok_str = "name BETWEEN :_name1_ AND :_name2_";
             const token = comptime genToken("name", .between, null);
             try testing.expect(mem.eql(u8, token, ok_str));
         }
 
         // Testing In List of Values
         {
-            const ok_str = "name IN (:_name1, :_name2, :_name3)";
+            const ok_str = "name IN (:_name1_, :_name2_, :_name3_)";
             const token = comptime genToken("name", .in, 3);
             try testing.expect(mem.eql(u8, token, ok_str));
         }
 
         // Testing Not In List of Values
         {
-            const ok_str = "name NOT IN (:_name1, :_name2, :_name3)";
+            const ok_str = "name NOT IN (:_name1_, :_name2_, :_name3_)";
             const token = comptime genToken("name", .@"!in", 3);
             try testing.expect(mem.eql(u8, token, ok_str));
         }

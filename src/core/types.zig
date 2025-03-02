@@ -95,12 +95,8 @@ pub const DataType = struct {
 };
 
 // Bind record filter data
-pub fn bindFilterData(
-    heap: Allocator,
-    list: *ArrayList([]const u8),
-    bind: *Bind,
-    filter: anytype
-) !void {
+/// **Remarks:** Intended for internal use only
+pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
     const info = @typeInfo(@TypeOf(filter));
     if (info != .@"struct") {
         const err_str = "Quill: Type of `{s}` Must be a Struct";
@@ -118,34 +114,49 @@ pub fn bindFilterData(
                 if (n.signedness == .signed and n.bits == 64) {
                     const param = ":_" ++ field.name ++ "_";
                     const pos = try bind.parameterIndex(param);
-                    try typeCast(heap, bind, pos, value, list);
+                    try bind.int64(pos, value);
                 } else {
                     @compileError("Use `i64` Instead");
                 }
             },
             .pointer => |p| {
-                switch (getFilterType(p)) {
+                switch (comptime getFilterType(p)) {
                     .Text => {
                         const param = ":_" ++ field.name ++ "_";
                         const pos = try bind.parameterIndex(param);
-                        try typeCast(heap, bind, pos, value, list);
+                        try bind.text(pos, value);
                     },
-                    .IntList, .TextList => {
-                        for (value.items, 0..value.items.len) |item, i| {
-                            const fmt_str = ":_" ++ field.name ++ "{s}_";
+                    .IntList => {
+                        for (1..value.len + 1) |i| {
+                            const fmt_str = ":_" ++ field.name ++ "{d}_";
 
                             // e.g., `:_name999_` max limit is 999
                             var buff: [fmt_str.len]u8 = undefined;
-                            const tag = try fmt.bufPrint(&buff, fmt_str, .{i});
+                            const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
+                            std.debug.print("Tag: |{s}|\n", .{tag});
                             const pos = try bind.parameterIndex(tag);
-                            try typeCast(heap, bind, pos, item, list);
+                            // _ = pos;
+                            try bind.int64(pos, value[i - 1]);
+                        }
+                    },
+                    .TextList => {
+                        for (1..value.len + 1) |i| {
+                            // std.debug.print("{s}\n", .{value[i]});
+                            const fmt_str = ":_" ++ field.name ++ "{d}_";
+
+                            // e.g., `:_name999_` max limit is 999
+                            var buff: [fmt_str.len]u8 = undefined;
+                            const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
+                            const pos = try bind.parameterIndex(tag);
+                            // _ = pos;
+                            try bind.text(pos, value[i - 1]);
                         }
                     }
                 }
             },
             else => {
-                const f_name = @tagName(field.type);
-                const t_name = @tagName(@TypeOf(filter));
+                const f_name = @typeName(field.type);
+                const t_name = @typeName(@TypeOf(filter));
                 const err_str = "Quill: Invalid Filter Type `{s}` on `{s}`";
                 @compileError(ctPrint(err_str, .{f_name, t_name}));
             }
@@ -161,6 +172,7 @@ fn getFilterType(ptr: Type.Pointer) FilterType {
         u8 => .Text,
         i64 => .IntList,
         []const u8 => .TextList,
+        // else => .Text
         else => @compileError("Use `u8`, `i64` or `[]const u8` Slices Instead")
     };
 }
