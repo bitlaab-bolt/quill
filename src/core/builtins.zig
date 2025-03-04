@@ -12,29 +12,6 @@ const quill = @import("./quill.zig");
 
 const Error = error { FailedIntegrityChecks };
 
-/// # Contains Record Related Functionalities
-pub const Record = struct {
-    /// TODO: OBsolte, count can generate the same statement when no filter
-    /// # Returns Total Number of Records
-    /// - `from` - Container name e.g., `users`, `accounts` etc.
-    pub fn countTotal(db: *quill, comptime from: []const u8) !usize {
-        var result = try db.exec("SELECT COUNT(*) FROM " ++ from ++ ";");
-        defer result.destroy();
-
-        const field = result.next().?[0];
-        return try fmt.parseInt(usize, field.data, 10);
-    }
-
-    /// # Returns Total Number of Matching Records
-    pub fn count(db: *quill, sql: []const u8) !usize {
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        const field = result.next().?[0];
-        return try fmt.parseInt(usize, field.data, 10);
-    }
-};
-
 /// # Contains Index Related Functionalities
 pub const Index = struct {
     const Mode = enum { Default, Unique };

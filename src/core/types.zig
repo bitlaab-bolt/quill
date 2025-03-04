@@ -37,8 +37,8 @@ pub const DataType = struct {
     pub const Float = f64;
     pub const Slice = []const u8;
 
-    const err_str = "Quill: Unsupported TypeCast of Type `{s}`";
-    const err_str2 = "Quill: Pointer Type of `{s}` Must be `[]const u8`";
+    const err_str = "quill: Unsupported TypeCast of Type `{s}`";
+    const err_str2 = "quill: Pointer Type of `{s}` Must be `[]const u8`";
 
     /// # TypeCasts from SQLite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data retrieval
@@ -88,18 +88,18 @@ pub const DataType = struct {
 
     fn constSlice(ptr: Type.Pointer) void {
         if (!(ptr.is_const and ptr.size == .slice)) {
-            const fmt_str = "Quill: Pointer Type `{s}` Must be `[]const T`";
+            const fmt_str = "quill: Pointer Type `{s}` Must be `[]const T`";
             @compileError(ctPrint(fmt_str, .{@typeName(ptr.child)}));
         }
     }
 };
 
-// Bind record filter data
+/// # Binds Filter Data
 /// **Remarks:** Intended for internal use only
 pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
     const info = @typeInfo(@TypeOf(filter));
     if (info != .@"struct") {
-        const err_str = "Quill: Type of `{s}` Must be a Struct";
+        const err_str = "quill: Type of `{s}` Must be a Struct";
         @compileError(ctPrint(err_str, .{@typeName(filter)}));
     }
 
@@ -157,7 +157,7 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
             else => {
                 const f_name = @typeName(field.type);
                 const t_name = @typeName(@TypeOf(filter));
-                const err_str = "Quill: Invalid Filter Type `{s}` on `{s}`";
+                const err_str = "quill: Invalid Filter Type `{s}` on `{s}`";
                 @compileError(ctPrint(err_str, .{f_name, t_name}));
             }
         }
@@ -172,7 +172,6 @@ fn getFilterType(ptr: Type.Pointer) FilterType {
         u8 => .Text,
         i64 => .IntList,
         []const u8 => .TextList,
-        // else => .Text
         else => @compileError("Use `u8`, `i64` or `[]const u8` Slices Instead")
     };
 }
@@ -189,7 +188,7 @@ pub fn convertFrom(
 ) !void {
     const info = @typeInfo(@TypeOf(record));
     if (info != .@"struct") {
-        const fmt_str = "Quill: Type of `{s}` Must be a Struct";
+        const fmt_str = "quill: Type of `{s}` Must be a Struct";
         @compileError(ctPrint(fmt_str, .{@typeName(record)}));
     }
 
@@ -248,9 +247,9 @@ fn typeCast(
     list: *ArrayList([]const u8),
 ) !void {
     const T = @TypeOf(value);
-    const err_str1 = "Quill: Unsupported Type Cast `{s}`";
-    const err_str2 = "Quill: Unexpected Type Cast `{s}`";
-    const err_str3 = "Quill: Field Type of `{s}` doesn't Exist on `DataType`";
+    const err_str1 = "quill: Unsupported Type Cast `{s}`";
+    const err_str2 = "quill: Unexpected Type Cast `{s}`";
+    const err_str3 = "quill: Field Type of `{s}` doesn't Exist on `DataType`";
 
     switch (@typeInfo(T)) {
         .@"struct" => |s| {
@@ -330,7 +329,7 @@ fn typeCast(
 pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     const info = @typeInfo(T);
     if (info != .@"struct") {
-        const fmt_str = "Quill: Type of `{s}` Must be a Struct";
+        const fmt_str = "quill: Type of `{s}` Must be a Struct";
         @compileError(ctPrint(fmt_str, .{@typeName(T)}));
     }
 
@@ -386,7 +385,7 @@ fn typeConversion(
     comptime T: type,
     comptime tag: []const u8
 ) !void {
-    const err_str = "Quill: Field Type of `{s}` doesn't Exist on `DataType`";
+    const err_str = "quill: Field Type of `{s}` doesn't Exist on `DataType`";
 
     switch (@typeInfo(T)) {
         .pointer => |p| {

@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
         else => @panic("Codebase is not tailored for this platform!")
     }
 
-    // Internal package dependencies
+    // Self importing package
     exe.root_module.addImport("quill", pkg);
 
     // External package dependencies

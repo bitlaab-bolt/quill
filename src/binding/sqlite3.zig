@@ -226,8 +226,12 @@ pub const Bind = struct {
 
     pub fn parameterIndex(self: *Bind, name: []const u8) !i32 {
         const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
-        return if (index == 0) Error.BindParameterNotFound
-        else @intCast(index);
+        if (index == 0) {
+            std.log.warn("Missing Field Name `{s}`\n", .{name});
+            return Error.BindParameterNotFound;
+        } else {
+            return @intCast(index);
+        }
     }
 
     /// # **WARNING:** Return value must be freed by the caller

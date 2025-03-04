@@ -7,8 +7,6 @@ const fmt = std.fmt;
 const mem = std.mem;
 const debug = std.debug;
 const testing = std.testing;
-const Allocator = mem.Allocator;
-const ArrayList = std.ArrayList;
 
 const Dt = @import("./types.zig").DataType;
 
@@ -21,29 +19,26 @@ pub const Container = struct {
     /// - `T` - Record Model structure
     /// - `name` - Container name e.g., `users`, `accounts` etc.
     pub fn create(comptime T: type, comptime name: Str) Str {
-        const info = @typeInfo(T);
-        if (info != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Model Structure";
+        if (@typeInfo(T) != .@"struct") {
+            const err_str = "quill: Type of `{s}` Must be a Model Structure";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         if (!@hasField(T, "uuid")) {
-            const err_str = "Quill: Model Structure `{s}` has no `uuid` Field";
+            const err_str = "quill: Model Structure `{s}` has no `uuid` Field";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         comptime var fields: Str = "";
-        inline for (info.@"struct".fields) |field| {
-            switch (@typeInfo(field.type)) {
+        inline for (@typeInfo(T).@"struct".fields) |f| {
+            switch (@typeInfo(f.type)) {
                 .optional => |o| {
-                    fields = fields ++ comptime genToken(
-                        o.child, field.name, true
-                    );
+                    const tokens = comptime genToken(o.child, f.name, true);
+                    fields = fields ++ tokens;
                 },
                 else => {
-                    fields = fields ++ comptime genToken(
-                        field.type, field.name, false
-                    );
+                    const tokens = comptime genToken(f.type, f.name,false);
+                    fields = fields ++ tokens;
                 }
             }
         }
@@ -56,9 +51,9 @@ pub const Container = struct {
     }
 
     /// # Generates SQL Text for a Given Field
-    /// **Remarks:** Compile time function e.g., `comptime getToken()`
+    /// **Remarks:** Compile-Time function e.g., `comptime getToken()`
     fn genToken(T: type, field: Str, opt: bool) Str {
-        const err_str = "Quill: Malformed Type `{s}`";
+        const err_str = "quill: Malformed Type `{s}`";
 
         switch (@typeInfo(T)) {
             .bool, .int => {
@@ -106,7 +101,7 @@ pub const Container = struct {
                             const fmt_str = "\t{s} BLOB PRIMARY KEY,\n";
                             return ctPrint(fmt_str, .{field});
                         } else {
-                            @compileError("Quill: UUID Can't be Optional");
+                            @compileError("quill: UUID Can't be Optional");
                         }
                     } else {
                         if (!opt) {
@@ -119,7 +114,7 @@ pub const Container = struct {
                     }
                 } else {
                     const name = s.fields[0].name;
-                    const err_str2 = "Quill: Invalid Field Name `{s}` in `{s}`";
+                    const err_str2 = "quill: Invalid Field Name `{s}` in `{s}`";
                     @compileError(ctPrint(err_str2, .{name, @typeName(T)}));
                 }
             },
@@ -132,7 +127,7 @@ pub const Container = struct {
 
 /// # Comparison Operators for Data Filtering
 /// - Comparison is done in Lexicographical Order for text data
-/// - Text Matching is case-insensitive and only supports `Str`
+/// - Text Matching is case-insensitive and only supports `[]const u8`
 const Operator = enum {
     /// Checks - Equality
     @"=",
@@ -147,13 +142,13 @@ const Operator = enum {
     /// Checks - Less Than or Equal To
     @"<=",
     /// Checks - Pattern Matching
-    /// - You must include regex patter on your input data e.g., `%John Doe%`
+    /// - You must include regex patter in your input data e.g., `%John Doe%`
     contains,
     /// Checks - Pattern Matching
-    /// - You must include regex patter on your input data e.g., `%John Doe%`
+    /// - You must include regex patter in your input data e.g., `%John Doe%`
     @"!contains",
     /// Checks - Between Values
-    /// Your input data slice should be length of 2. e.g., `&.{10, 20}`
+    /// Your input data slice must be the length of 2. e.g., `&.{10, 20}`
     between,
     /// Checks - In List of Values
     in,
@@ -165,8 +160,8 @@ const Operator = enum {
     @"!null",
 
     /// # Generates SQL Text for a Given Field
-    /// **Remarks:** Compile time function e.g., `comptime getToken()`
-    /// - `len` - Number of parameter to be passed for `in` and `@"!in`
+    /// **Remarks:** Compile-Time function e.g., `comptime getToken()`
+    /// - `len` - **null**, or the number of parameters for `in` and `@"!in`
     fn genToken(field: Str, op: Operator, len: ?u8) Str {
         switch (op) {
             .@"=" => {
@@ -198,7 +193,7 @@ const Operator = enum {
                 return ctPrint(fmt_str, .{field} ** 3);
             },
             .in => {
-                if (len == null) @compileError("Quill: `len` can't be null");
+                if (len == null) @compileError("quill: `len` can't be `null`");
 
                 comptime var params: Str = "";
                 for (1..len.? + 1) |i| {
@@ -211,7 +206,7 @@ const Operator = enum {
                 return ctPrint(fmt_str, .{field, data});
             },
             .@"!in" => {
-                if (len == null) @compileError("Quill: `len` can't be null");
+                if (len == null) @compileError("quill: `len` can't be `null`");
 
                 comptime var params: Str = "";
                 for (1..len.? + 1) |i| {
@@ -333,7 +328,7 @@ pub const Record = struct {
     /// # Ordered Function Execution
     fn FnChain(comptime T: type) type {
         if (@typeInfo(T) != .@"enum") {
-            const err_str = "Quill: `{s}` Must be an `enum` Type";
+            const err_str = "quill: `{s}` Must be an `enum` Type";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
@@ -359,6 +354,11 @@ pub const Record = struct {
                 const value = @intFromEnum(variant) + 1;
                 return if (self.cursor >= value) false else true;
             }
+
+            fn peek(self: *Self) ?T {
+                return if (self.cursor == 0) null
+                else @enumFromInt(self.cursor - 1);
+            }
         };
     }
 
@@ -369,21 +369,21 @@ pub const Record = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn find(T: type, U: type, from: Str) Find(T, U) {
         if (@typeInfo(T) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a View Structure";
+            const err_str = "quill: Type of `{s}` Must be a View Structure";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         if (@typeInfo(U) != .void and @typeInfo(U) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
             @compileError(ctPrint(err_str, .{@typeName(U)}));
         }
 
-        var tokens: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |field| {
-            tokens = tokens ++ ctPrint("{s}, ", .{field.name});
+        var fields: Str = "";
+        inline for (@typeInfo(T).@"struct".fields) |f| {
+            fields = fields ++ ctPrint("{s}, ", .{f.name});
         }
 
-        const data = tokens[0..tokens.len - 2];
+        const data = fields[0..fields.len - 2];
         const sql = ctPrint("SELECT {s} FROM {s}", .{data, from});
 
         return Find(T, U).create(sql);
@@ -409,16 +409,12 @@ pub const Record = struct {
             /// - Combines **DISTINCT** keyword to the existing statement
             pub fn dist(self: *Self) void {
                 self.seq.add(.Distinct) catch |err| {
-                    const err_str = "Quill: Builder Function - {s}";
+                    const err_str = "quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@tagName(err)}));
                 };
 
                 const sql = "SELECT DISTINCT";
-                // const eql = mem.eql(u8, self.stmt[0..15], sql);
                 self.stmt = sql ++ self.stmt[6..];
-
-                // if (!eql and self.seq == 1) self.stmt = sql ++ self.stmt[6..]
-                // else @compileError("Quill: Invalid Function Chain");
             }
 
             /// # Generates SQL Comparison Operator Token
@@ -454,7 +450,7 @@ pub const Record = struct {
             /// - Generates **ORDER BY** clause
             pub fn sort(self: *Self, order:[]const OrderBy) void {
                 self.seq.add(.OrderedBy) catch |err| {
-                    const err_str = "Quill: Builder Function - {s}";
+                    const err_str = "quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
 
@@ -466,18 +462,14 @@ pub const Record = struct {
                     switch (field) {
                         .ASC => |v| {
                             if (@hasField(t, v)) {
-                                clause = clause ++ ctPrint(
-                                    "{s} ASC, ", .{v}
-                                );
+                                clause = clause ++ ctPrint("{s} ASC, ", .{v});
                             } else {
                                 @compileError(ctPrint(err_str, .{v}));
                             }
                         },
                         .DESC => |v| {
                             if (@hasField(t, v)) {
-                                clause = clause ++ ctPrint(
-                                    "{s} DESC, ", .{v}
-                                );
+                                clause = clause ++ ctPrint("{s} DESC, ", .{v});
                             } else {
                                 @compileError(ctPrint(err_str, .{v}));
                             }
@@ -494,7 +486,7 @@ pub const Record = struct {
             /// - Generates **LIMIT** clause
             pub fn limit(self: *Self, num: u32) void {
                 self.seq.add(.Limit) catch |err| {
-                    const err_str = "Quill: Builder Function - {s}";
+                    const err_str = "quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
 
@@ -506,7 +498,7 @@ pub const Record = struct {
             /// - Generates **OFFSET** clause
             pub fn skip(self: *Self, num: u32) void {
                 self.seq.add(.Offset) catch |err| {
-                    const err_str = "Quill: Builder Function - {s}";
+                    const err_str = "quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
 
@@ -524,7 +516,7 @@ pub const Record = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn count(T: type, from: Str) Count(T) {
         if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
             @compileError(ctPrint(err_str, .{@typeName(err_str)}));
         }
 
@@ -538,8 +530,8 @@ pub const Record = struct {
         return struct {
             const t_filter: T = mem.zeroes(T);
 
-            seq: u8 = 1,
             stmt: Str,
+            seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
 
             const Self = @This();
 
@@ -586,7 +578,7 @@ pub const Record = struct {
     /// - `to` - Container name e.g., `users`, `accounts` etc.
     pub fn create(T: type, to: Str, act: Action) Create(T) {
         if (@typeInfo(T) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Model Structure";
+            const err_str = "quill: Type of `{s}` Must be a Model Structure";
             @compileError(ctPrint(err_str, .{@typeName(err_str)}));
         }
 
@@ -620,7 +612,7 @@ pub const Record = struct {
 
             const Self = @This();
 
-            /// # Creates Count Query Builder
+            /// # Creates Create Query Builder
             /// **Remarks:** Intended for internal use only
             fn create(sql: Str) Self { return .{.stmt = sql}; }
 
@@ -636,21 +628,21 @@ pub const Record = struct {
     /// - `opt` - Record update option, Use `All` with **CAUTION**
     pub fn update(T: type, U: type, to: Str, opt: Constraint) Update(T, U) {
         if (@typeInfo(T) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Model Structure";
+            const err_str = "quill: Type of `{s}` Must be a Model Structure";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
         if (@typeInfo(U) != .void and @typeInfo(U) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
             @compileError(ctPrint(err_str, .{@typeName(U)}));
         }
 
-        var tokens: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |field| {
-            tokens = tokens ++ ctPrint("{s} = :{s}, ", .{field.name} ** 2);
+        var fields: Str = "";
+        inline for (@typeInfo(T).@"struct".fields) |f| {
+            fields = fields ++ ctPrint("{s} = :{s}, ", .{f.name} ** 2);
         }
 
-        const data = tokens[0..tokens.len - 2];
+        const data = fields[0..fields.len - 2];
         const sql = ctPrint("UPDATE {s}\nSET {s}", .{to, data});
         return Update(T, U).create(sql, opt);
     }
@@ -663,8 +655,8 @@ pub const Record = struct {
             const t_filter: U = mem.zeroes(U);
 
             stmt: Str,
-            seq: u8 = 1,
             option: Constraint = undefined,
+            seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
 
             const Self = @This();
 
@@ -705,12 +697,13 @@ pub const Record = struct {
 
             /// # Returns Evaluated SQL Statement
             pub fn statement(self: *Self) Str {
+                const fc = self.seq.peek();
                 const pass = switch (self.option) {
-                    .All => if (self.seq == 1) true else false,
-                    .Exact => if (self.seq == 2) true else false
+                    .All => if (fc == null) true else false,
+                    .Exact => if (fc != null and fc == .Where) true else false
                 };
 
-                if (!pass) @compileError("Quill: Failed Update Constraint");
+                if (!pass) @compileError("quill: Failed Update Constraint");
                 return Common.statement(self);
             }
         };
@@ -722,7 +715,7 @@ pub const Record = struct {
     /// - `opt` - Record delete option, Use `All` with **CAUTION**
     pub fn remove(T: type, from: Str, opt: Constraint) Remove(T) {
         if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
-            const err_str = "Quill: Type of `{s}` Must be a Filter Structure";
+            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
@@ -736,8 +729,8 @@ pub const Record = struct {
             const t_filter: T = mem.zeroes(T);
 
             stmt: Str,
-            seq: u8 = 1,
             option: Constraint = undefined,
+            seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
 
             const Self = @This();
 
@@ -778,12 +771,13 @@ pub const Record = struct {
 
             /// # Returns Evaluated SQL Statement
             pub fn statement(self: *Self) Str {
+                const fc = self.seq.peek();
                 const pass = switch (self.option) {
-                    .All => if (self.seq == 1) true else false,
-                    .Exact => if (self.seq == 2) true else false
+                    .All => if (fc == null) true else false,
+                    .Exact => if (fc != null and fc == .Where) true else false
                 };
 
-                if (!pass) @compileError("Quill: Failed Remove Constraint");
+                if (!pass) @compileError("quill: Failed Remove Constraint");
                 return Common.statement(self);
             }
         };
@@ -796,12 +790,12 @@ const Common = struct {
     /// **Remarks:** Generic filter function implementation
     pub fn filter(T: type, field: Str, op: Operator, len: ?u8) Str {
         if (@typeInfo(T) == .void) {
-            const err_str = "Quill: Filter Structure can't be `void`";
+            const err_str = "quill: Filter Structure can't be `void`";
             @compileError(ctPrint(err_str, .{}));
         }
 
         if (!@hasField(T, field)) {
-            const err_str = "Quill: Field `{s}` doesn't exist on `{s}`";
+            const err_str = "quill: Field `{s}` doesn't Exists on `{s}`";
             @compileError(ctPrint(err_str, .{field, @typeName(T)}));
         }
 
@@ -828,7 +822,7 @@ const Common = struct {
     /// **Remarks:** Generic when function implementation
     pub fn when(self: anytype, tokens: []const Str) void {
         self.seq.add(.Where) catch |err| {
-            const err_str = "Quill: Builder Function - {s}";
+            const err_str = "quill: Builder Function - {s}";
             @compileError(ctPrint(err_str, .{@errorName(err)}));
         };
 
@@ -843,7 +837,7 @@ const Common = struct {
     /// **Remarks:** Generic statement function implementation
     pub fn statement(self: anytype) Str {
         if (!mem.endsWith(u8, self.stmt, ";")) self.stmt = self.stmt ++ ";"
-        else @compileError("Quill: Invalid Function Chain");
+        else @compileError("quill: Invalid Function Chain");
 
         return self.stmt;
     }

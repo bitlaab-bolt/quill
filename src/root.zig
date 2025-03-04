@@ -8,7 +8,7 @@ pub const Builtins = @import("./core/builtins.zig");
 pub const QueryBuilder = @import("./core/builder.zig");
 pub const Types = @import("./core/types.zig").DataType;
 
-/// # API Bindings for Underlying Libraries
+/// # API Bindings from Underlying SQLite Library
 pub const Api = struct {
     pub const sqlite3 = @import("./binding/sqlite3.zig");
 };

@@ -1,27 +1,65 @@
 const std = @import("std");
+
 const quill = @import("quill");
+const Uuid = quill.Uuid;
+const Quill = quill.Quill;
 const Dt = quill.Types;
 const Qb = quill.QueryBuilder;
-const Quill = quill.Quill;
-const Uuid = quill.Uuid;
+
+const Gender = enum(u8) { Male = 1, Female = 2 };
+const Social = struct { website: []const u8, username: [] const u8 };
 
 pub const Model = struct {
     uuid: Dt.CastInto(.Blob, Dt.Slice),
-    name: Dt.CastInto(.Text, Dt.Slice),
-    balance: Dt.Float,
-    age: Dt.Int,
+    name1: Dt.CastInto(.Text, Dt.Slice),
+    name2: ?Dt.CastInto(.Text, Dt.Slice),
+    balance1: Dt.Float,
+    balance2: ?Dt.Float,
+    age1: Dt.Int,
+    age2: ?Dt.Int,
+    verified1: Dt.Bool,
+    verified2: ?Dt.Bool,
+    gender1: Dt.CastInto(.Int, Gender),
+    gender2: ?Dt.CastInto(.Int, Gender),
+    gender3: Dt.CastInto(.Text, Gender),
+    gender4: ?Dt.CastInto(.Text, Gender),
+    about1: Dt.CastInto(.Blob, Dt.Slice),
+    about2: ?Dt.CastInto(.Blob, Dt.Slice),
+    social1: Dt.CastInto(.Text, Social),
+    social2: ?Dt.CastInto(.Text, Social),
+    social3: Dt.CastInto(.Text, []const Social),
+    social4: ?Dt.CastInto(.Text, []const Social)
 };
 
 pub const View = struct {
     uuid: Dt.Slice,
-    name: Dt.Slice,
-    balance: Dt.Float,
-    age: Dt.Int,
+    name1: Dt.Slice,
+    name2: ?Dt.Slice,
+    balance1: Dt.Float,
+    balance2: ?Dt.Float,
+    age1: Dt.Int,
+    age2: ?Dt.Int,
+    verified1: Dt.Bool,
+    verified2: ?Dt.Bool,
+    gender1: Dt.Any(Gender),
+    gender2: ?Dt.Any(Gender),
+    gender3: Dt.Any(Gender),
+    gender4: ?Dt.Any(Gender),
+    about1: Dt.Slice,
+    about2: ?Dt.Slice,
+    social1: Dt.Any(Social),
+    social2: ?Dt.Any(Social),
+    social3: Dt.Any([]const Social),
+    social4: ?Dt.Any([]const Social)
 };
 
-const FilterId = struct { uuid: Dt.Slice };
+pub const FilterUser = struct { name1: Dt.Slice, age1: Dt.Int };
 
-const FilterAge = struct { name: Dt.Slice };
+pub const ModelProfile = struct {
+    name2: ?Dt.CastInto(.Text, Dt.Slice),
+    age2: ?Dt.Int,
+};
+
 
 pub fn main() !void {
     var gpa_mem = std.heap.GeneralPurposeAllocator(.{}){};
@@ -34,55 +72,15 @@ pub fn main() !void {
     var db = try Quill.open(heap, "hello.db");
     defer db.close();
 
-    // Creates users table
-    // const table_sql = comptime Qb.Container.create(Model, "users");
-    // var result = try db.exec(table_sql);
-    // result.destroy();
 
-    // const create_sql = comptime blk: {
-    //     var sql = Qb.Record.create(View, "users", .Default);
-    //     // sql.when(&.{
-    //     //     sql.filter("uuid", .@"=", null),
-    //     //     sql.chain(.AND)
-    //     // });
-
-    //     break :blk sql.statement();
-    // };
-
-    // var crud = try db.prepare(create_sql);
-    // defer crud.destroy();
-
-    // const model = Model{
-    //     .uuid = .{ .blob = &Uuid.new() },
-    //     .name = .{ .text = "John Doe" },
-    //     .age = 20,
-    //     .balance = 200.0,
-    // };
-
-    // try crud.exec(model, null);
-
-    // Find users data
-    const find_sql = comptime blk: {
-        var sql = Qb.Record.find(View, FilterAge, "users");
-        sql.when(&.{
-            sql.filter("name", .@"!null", null)
-            // for null and not null filter field is not necessary
-        });
-
-        sql.sort(&.{.{.ASC = "age" }});
-
+    const sql = comptime blk: {
+        var sql = Qb.Record.remove(void, "users", .All);
         break :blk sql.statement();
     };
+    std.debug.print("{s}\n", .{sql});
 
-    std.debug.print("{s}\n", .{find_sql});
+    var crud = try db.prepare(sql);
+    defer crud.destroy();
 
-    var crud2 = try db.prepare(find_sql);
-    defer crud2.destroy();
-
-    // Must provide % %  from outside;
-    // const filter = FilterAge { .name = "Doe" };
-
-    const result2 = try crud2.readOne(View, null);
-    defer crud2.free(result2);
-    std.debug.print("{any}\n", .{result2});
+    try crud.remove(null, null);
 }
