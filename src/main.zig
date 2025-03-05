@@ -5,6 +5,9 @@ const Uuid = quill.Uuid;
 const Quill = quill.Quill;
 const Dt = quill.Types;
 const Qb = quill.QueryBuilder;
+const DateTime = quill.DateTime;
+
+const Builtins = quill.Builtins;
 
 const Gender = enum(u8) { Male = 1, Female = 2 };
 const Social = struct { website: []const u8, username: [] const u8 };
@@ -72,15 +75,13 @@ pub fn main() !void {
     var db = try Quill.open(heap, "hello.db");
     defer db.close();
 
+    
+    const urn_string = "01956633-4BAB-7BD9-9209-7365F2DB6F2E";
+    const id = try Uuid.fromUrn(urn_string);
+    std.debug.print("{any}\n", .{id});
 
-    const sql = comptime blk: {
-        var sql = Qb.Record.remove(void, "users", .All);
-        break :blk sql.statement();
-    };
-    std.debug.print("{s}\n", .{sql});
+    const ts_ms = DateTime.timestamp();
+    std.debug.print("Current Timestamp: {d}\n", .{ts_ms});
 
-    var crud = try db.prepare(sql);
-    defer crud.destroy();
-
-    try crud.remove(null, null);
 }
+

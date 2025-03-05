@@ -99,7 +99,7 @@ pub const ModelProfile = struct {
 
 ### Create a New Container
 
-Following example will create a new container based on the `Model` structure.
+Following example will create a new container based on a given record `Model` structure.
 
 ```zig
 const sql = comptime Qb.Container.create(Model, "users");
@@ -107,27 +107,18 @@ var result = try db.exec(sql);
 result.destroy();
 ```
 
-### Remove a Container
-
-Following example will delete an entire database container.
-
-WIP:
-
-```zig
-
-```
-
-### Reset a Container
-
-Following example will remove all records from a given database container.
-
-WIP:
-
-```zig
-
-```
+**Remarks:** For other container related operations please see - [Builtin Modules](/builtins)
 
 ## Record Operation
+
+Let's declare a Callback function. Following function is used in case you want to capture `exec()` and `remove()` result for the `INSERT`, `UPDATE`, and `DELETE` SQL statement.
+
+```zig
+fn resultCallback(result: Quill.Result, affected: i64) void {
+    const fmt_str = "Result: {any}\nAffected Records: {d}\n";
+    std.debug.print(fmt_str, .{result, affected});
+}
+```
 
 ### Create a New Record
 
@@ -154,7 +145,7 @@ defer heap.destroy(soc_dyn);
 const soc = Social { .website = "example.one", .username = name };
 
 const record_data = Model {
-    .uuid = .{.blob = &Uuid.new() },
+    .uuid = .{.blob = &Uuid.new()},
     .name1 = .{.text = name},
     .name2 = null,
     .balance1 = 10.50,
@@ -169,7 +160,7 @@ const record_data = Model {
     .gender4 = null,
     .about1 = .{.blob = about},
     .about2 = null,
-    .social1 = .{.text = soc_dyn.* },
+    .social1 = .{.text = soc_dyn.*},
     .social2 = null,
     .social3 = .{.text = &.{soc, soc_dyn.*}},
     .social4 = null
@@ -178,7 +169,7 @@ const record_data = Model {
 var crud = try db.prepare(sql);
 defer crud.destroy();
 
-try crud.exec(record_data, null, null);
+try crud.exec(record_data, null, resultCallback);
 ```
 
 ### Find Record
@@ -342,7 +333,7 @@ const profile = ModelProfile {
 var crud = try db.prepare(sql);
 defer crud.destroy();
 
-try crud.exec(profile, null, null);
+try crud.exec(profile, null, resultCallback);
 ```
 
 Following example will update all records to a given container based on filtered result.
@@ -369,7 +360,7 @@ const filter = FilterUser { .name1 = "John Doe", .age1 = 31 };
 var crud = try db.prepare(sql);
 defer crud.destroy();
 
-try crud.exec(profile, filter, null);
+try crud.exec(profile, filter, resultCallback);
 ```
 
 ### Remove Record
@@ -385,7 +376,7 @@ const sql = comptime blk: {
 var crud = try db.prepare(sql);
 defer crud.destroy();
 
-try crud.remove(null, null);
+try crud.remove(null, resultCallback);
 ```
 
 
@@ -408,6 +399,50 @@ const filter = FilterUser { .name1 = "John Doe", .age1 = 31 };
 var crud = try db.prepare(sql);
 defer crud.destroy();
 
-try crud.remove(filter, null);
+try crud.remove(filter, resultCallback);
 ```
 
+## Miscellaneous
+
+Quill has some additional utility modules for repeated codes. Import following module to use through out the examples.
+
+```zig
+const Uuid = quill.Uuid;
+const DateTime = quill.DateTime;
+```
+
+### UUID
+
+Provides an Universally Unique IDentifier module for managing primary keys.
+
+Create a new slice of UUID v7.
+
+```zig
+const id = Uuid.new();
+std.debug.print("{any}\n", .{id});
+```
+
+Create an URN (Uniform Resource Name) string from a given UUID slice.
+
+```zig
+const id = Uuid.new();
+const id_urn = try Uuid.toUrn(&id);
+std.debug.print("URN: {s}\n", .{id_urn});
+```
+
+Generate an UUID slice from a given URN string.
+
+```zig
+const urn_string = "01956633-4BAB-7BD9-9209-7365F2DB6F2E";
+const id = try Uuid.fromUrn(urn_string);
+std.debug.print("{any}\n", .{id});
+```
+
+### Timestamp
+
+Provides an Epoch timestamp in millisecond. Needed for record's timekeeping.
+
+```zig
+const ts_ms = DateTime.timestamp();
+std.debug.print("Current Timestamp: {d}\n", .{ts_ms});
+```

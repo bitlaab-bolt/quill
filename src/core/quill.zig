@@ -11,12 +11,15 @@ const jsonic = @import("jsonic");
 
 const types = @import("./types.zig");
 
-const sqlite3 = @import("../binding/sqlite3.zig");
+pub const sqlite3 = @import("../binding/sqlite3.zig");
 const STMT = sqlite3.STMT;
 const Flag = sqlite3.OpenFlag;
 const Option = sqlite3.Option;
-const Result = sqlite3.Result;
+const Database = sqlite3.Database;
 const ExecResult = sqlite3.ExecResult;
+
+pub const Result = sqlite3.Result;
+
 
 heap: Allocator,
 instance: sqlite3.Database,
@@ -69,7 +72,7 @@ pub fn prepare(self: *Self, sql: []const u8) !CRUD {
         log.warn("{s}", .{self.errMsg()});
         return err;
     };
-    return CRUD.create(self.heap, stmt);
+    return CRUD.create(self, stmt);
 }
 
 /// # Shows Human-Readable Error Message
@@ -84,13 +87,13 @@ pub fn errMsg(self: *Self) []const u8 {
 ///
 /// **WARNING:** You must call `destroy()` at the end to release the STMT
 pub const CRUD = struct {
-    heap: Allocator,
+    db: *Self,
     stmt: STMT,
 
     /// # Creates the Interface
     /// - **Remarks:** For internal use only, by the `Self.prepare()`
-    fn create(heap: Allocator, stmt: STMT) CRUD {
-        return .{.heap = heap, .stmt = stmt };
+    fn create(db: *Self, stmt: STMT) CRUD {
+        return .{.db = db, .stmt = stmt };
     }
 
     /// # Destroys the Interface
@@ -106,11 +109,11 @@ pub const CRUD = struct {
         const T = @TypeOf(result);
         switch (@typeInfo(T)) {
             .@"struct" => {
-                release(self.heap, result);
+                release(self.db.heap, result);
             },
             .optional => {
                 if (result == null) return;
-                release(self.heap, result.?);
+                release(self.db.heap, result.?);
             },
             .pointer => |p| {
                 if (!(p.is_const and p.size == .slice)) {
@@ -118,8 +121,8 @@ pub const CRUD = struct {
                 }
 
                 const items: T = result;
-                for (0..items.len) |i| release(self.heap, items[i]);
-                self.heap.free(items);
+                for (0..items.len) |i| release(self.db.heap, items[i]);
+                self.db.heap.free(items);
             },
             else => @compileError(
                 "quill: Result must be a struct of - `T`, `?T` or `[]const T`"
@@ -170,14 +173,14 @@ pub const CRUD = struct {
     /// **WARNING:** Result must be freed by calling `free()`
     pub fn readOne(self: *CRUD, comptime T: type, filter: anytype) !?T {
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.heap, self.stmt);
+            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
         if (try sqlite3.step(self.stmt) == .Done) return null;
 
-        var column = sqlite3.Column.init(self.heap, self.stmt);
-        return try types.convertTo(self.heap, &column, T);
+        var column = sqlite3.Column.init(self.db.heap, self.stmt);
+        return try types.convertTo(self.db.heap, &column, T);
     }
 
     /// # Retrieves Multiple (Records) Query Result
@@ -189,14 +192,14 @@ pub const CRUD = struct {
     /// **WARNING:** Result must be freed by calling `free()`
     pub fn readMany(self: *CRUD, comptime T: type, filter: anytype) ![]const T {
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.heap, self.stmt);
+            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
-        var records = ArrayList(T).init(self.heap);
+        var records = ArrayList(T).init(self.db.heap);
         while (try sqlite3.step(self.stmt) == .Row) {
-            var column = sqlite3.Column.init(self.heap, self.stmt);
-            try records.append(try types.convertTo(self.heap, &column, T));
+            var column = sqlite3.Column.init(self.db.heap, self.stmt);
+            try records.append(try types.convertTo(self.db.heap, &column, T));
         }
 
         return try records.toOwnedSlice();
@@ -207,18 +210,18 @@ pub const CRUD = struct {
     /// - `filter` - **null**, Otherwise instance of an Filter structure
     pub fn count(self: *CRUD, filter: anytype) !usize {
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.heap, self.stmt);
+            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
         debug.assert(try sqlite3.step(self.stmt) == .Row);
-        const column = sqlite3.Column.init(self.heap, self.stmt);
+        const column = sqlite3.Column.init(self.db.heap, self.stmt);
 
         debug.assert(column.dataType(0) == .Int);
         return @intCast(column.int64(0));
     }
 
-    const ExecCallback = *const fn(result: Result) void;
+    const ExecCallback = *const fn(result: Result, affected: i64) void;
 
     /// # Binds Params Data and then Executes a SQL Statement
     /// **Remarks:** Can be used for both creating and updating records
@@ -231,21 +234,22 @@ pub const CRUD = struct {
         callback: ?ExecCallback
     ) !void {
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.heap, self.stmt);
+            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
-        var list = ArrayList([]const u8).init(self.heap);
+        var list = ArrayList([]const u8).init(self.db.heap);
         defer {
-            for (list.items) |item| self.heap.free(item);
+            for (list.items) |item| self.db.heap.free(item);
             list.deinit();
         }
 
-        var params = sqlite3.Bind.init(self.heap, self.stmt);
-        try types.convertFrom(self.heap, &list, &params, record);
+        var params = sqlite3.Bind.init(self.db.heap, self.stmt);
+        try types.convertFrom(self.db.heap, &list, &params, record);
 
         const result = try sqlite3.step(self.stmt);
-        if (callback) |cb| cb(result);
+        const affected = sqlite3.changes64(self.db.instance);
+        if (callback) |cb| cb(result, affected);
     }
 
     /// # Removes Matching Records from the Container
@@ -256,38 +260,34 @@ pub const CRUD = struct {
     /// `callback` - Captures remove result when not **NULL**
     pub fn remove(self: *CRUD, filter: anytype, callback: ?ExecCallback) !void {
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.heap, self.stmt);
+            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
         const result = try sqlite3.step(self.stmt);
-        if (callback) |cb| cb(result);
+        const affected = sqlite3.changes64(self.db.instance);
+        if (callback) |cb| cb(result, affected);
     }
+};
 
-    const AcidAction = enum { Commit, Rollback };
-    const AcidCallback = *const fn(result: ExecResult) void;
+pub const AcidSession = struct {
+    const Action = enum { Commit, Rollback };
+    const Callback = *const fn(result: ExecResult) void;
 
     /// # Starts ACID Session for Multiple Transaction
     /// - `callback` - Captures execution result when not **NULL**
-    pub fn acidSessionStart(self: *CRUD, callback: ?AcidCallback) !void {
-        const db: *Self = @fieldParentPtr("heap", &self.heap);
-        const result = try db.exec("BEGIN TRANSACTION;");
+    pub fn start(self: *Self, callback: ?Callback) !void {
+        var result = try self.exec("BEGIN TRANSACTION;");
         if (callback) |cb| cb(result)
         else result.destroy();
     }
 
     /// # Ends ACID Session for Multiple Transaction
     /// - `callback` - Captures execution result when not **NULL**
-    pub fn acidSessionEnd(
-        self: *CRUD,
-        action: AcidAction,
-        callback: ?AcidCallback
-    ) !void {
-        const db: *Self = @fieldParentPtr("heap", &self.heap);
-
-        const result = switch (action) {
-            .Commit => try db.exec("COMMIT;"),
-            .Rollback => try db.exec("ROLLBACK;")
+    pub fn end(self: *Self, act: Action, callback: ?Callback) !void {
+        var result = switch (act) {
+            .Commit => try self.exec("COMMIT;"),
+            .Rollback => try self.exec("ROLLBACK;")
         };
 
         if (callback) |cb| cb(result)

@@ -322,6 +322,10 @@ pub fn finalize(stmt: STMT) !void {
     if (rv != 0) return @"error"(rv);
 }
 
+pub fn changes64(db: Database) i64 {
+    return @as(i64, sqlite3.sqlite3_changes64(db));
+}
+
 pub fn errMsg(db: Database) []const u8 {
     return mem.span(sqlite3.sqlite3_errmsg(db));
 }

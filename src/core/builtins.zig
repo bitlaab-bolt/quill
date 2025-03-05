@@ -8,6 +8,7 @@ const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
 const quill = @import("./quill.zig");
+const builder = @import("./builder.zig");
 
 
 const Error = error { FailedIntegrityChecks };
@@ -45,14 +46,18 @@ pub const Index = struct {
         switch (mode) {
             .Default => {
                 // e.g., CREATE INDEX idx_name ON users(first_name);
-                var result = try db.exec("CREATE INDEX " ++ idx ++ " ON " ++ in ++ "(" ++ @"for" ++ ");");
+                const fmt_str = "CREATE INDEX {s} ON {s}(\"{s}\");";
+                const sql = fmt.comptimePrint(fmt_str, .{idx, in, @"for"});
+                var result = try db.exec(sql);
                 defer result.destroy();
 
                 debug.assert(result.count() == 0);
             },
             .Unique => {
                 // e.g., CREATE UNIQUE INDEX idx_name ON users(first_name);
-                var result = try db.exec("CREATE UNIQUE INDEX " ++ idx ++ " ON " ++ in ++ "(" ++ @"for" ++ ");");
+                const fmt_str = "CREATE UNIQUE INDEX {s} ON {s}(\"{s}\");";
+                const sql = fmt.comptimePrint(fmt_str, .{idx, in, @"for"});
+                var result = try db.exec(sql);
                 defer result.destroy();
 
                 debug.assert(result.count() == 0);
@@ -63,7 +68,7 @@ pub const Index = struct {
     /// # Removes an Existing Index
     /// **Remarks:** You should only remove user defined indexes
     /// - `idx` - Index name e.g., `idx_unique_email`
-    pub fn remove(db: *quill, comptime idx: []const u8,) !void {
+    pub fn remove(db: *quill, comptime idx: []const u8) !void {
         var result = try db.exec("DROP INDEX " ++ idx ++ ";");
         defer result.destroy();
 
@@ -123,6 +128,8 @@ pub const Index = struct {
 /// # Contains Container Related Functionalities
 pub const Container = struct {
     const Action = enum { Retain, Purge };
+    const FieldType = enum { INTEGER, REAL, TEXT, BLOB };
+    const FieldOption = union(enum) { Null: void, NotNull: []const u8 };
 
     /// # Renames a Container
     /// - `from` - Current container name e.g., `users`, `accounts` etc.
@@ -132,60 +139,18 @@ pub const Container = struct {
         comptime from: []const u8,
         comptime to: []const u8
     ) !void {
-        const sql = "ALTER TABLE " ++ from ++ " RENAME TO " ++ to ++ ";";
+        const fmt_str = "ALTER TABLE {s} RENAME TO {s};";
+        const sql = fmt.comptimePrint(fmt_str, .{from, to});
         var result = try db.exec(sql);
         defer result.destroy();
 
         debug.assert(result.count() == 0);
-    }
-
-    // TODO: when builder is competed
-    pub fn fieldAdd(
-        db: *quill,
-        comptime name: []const u8,
-        comptime from: []const u8,
-        comptime to: []const u8
-    ) !void {
-        _ = db;
-        _ = name;
-        _ = from;
-        _ = to;
-    }
-
-    /// # Renames a Field in a Given Container
-    /// - `name` - Container name e.g., `users`, `accounts` etc.
-    /// - `from` - Current field name e.g., `name`, `phone` etc.
-    /// - `to` - New field name e.g., `fullname`, `phone_number` etc.
-    pub fn fieldRename(
-        db: *quill,
-        comptime name: []const u8,
-        comptime from: []const u8,
-        comptime to: []const u8
-    ) !void {
-        const sql = "ALTER TABLE " ++ name ++ " RENAME COLUMN " ++ from ++ " TO " ++ to ++ ";";
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
-    }
-
-    // TODO: when builder is competed
-    pub fn fieldRemove(
-        db: *quill,
-        comptime name: []const u8,
-        comptime from: []const u8,
-        comptime to: []const u8
-    ) !void {
-        _ = db;
-        _ = name;
-        _ = from;
-        _ = to;
     }
 
     /// # Removes All Records from a Container
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     /// - `act` - When **Purge**, vacuums unused space in the database file
-    pub fn clear(db: *quill, comptime from: []const u8, act: Action) !void {
+    pub fn reset(db: *quill, comptime from: []const u8, act: Action) !void {
         switch (act) {
             .Retain => {
                 var result = try db.exec("DELETE FROM " ++ from ++ ";");
@@ -222,6 +187,95 @@ pub const Container = struct {
                 debug.assert(result.count() == 0);
             }
         }
+    }
+
+    /// # Renames a Container
+    /// - `to` - Current container name e.g., `users`, `accounts` etc.
+    /// - `name` - New field name e.g., `fullname`, `phone_number` etc.
+    /// - `@"type" - Data type of the new field e.g., `.Int`
+    /// - `opt` - New field option e.g., `.{.Null}` or `.{.NotNull = "20"}`
+    ///
+    /// **Remarks:** For default `TEXT` data use e.g., `.{.NotNull = "'John'"}`
+    pub fn fieldAdd(
+        db: *quill,
+        comptime to: []const u8,
+        comptime name: []const u8,
+        comptime @"type": FieldType,
+        comptime opt: FieldOption
+    ) !void {
+        const sql = switch (opt) {
+            .Null => fmt.comptimePrint(
+                "ALTER TABLE {s} ADD COLUMN {s} {s};",
+                .{to, name, @tagName(@"type")}
+            ),
+            .NotNull => |v| fmt.comptimePrint(
+                "ALTER TABLE {s} ADD COLUMN {s} {s} NOT NULL DEFAULT {s}",
+                .{to, name, @tagName(@"type"), v}
+            )
+        };
+
+        var result = try db.exec(sql);
+        defer result.destroy();
+
+        debug.assert(result.count() == 0);
+    }
+
+    /// # Renames a Field in a Given Container
+    /// - `name` - Container name e.g., `users`, `accounts` etc.
+    /// - `from` - Current field name e.g., `name`, `phone` etc.
+    /// - `to` - New field name e.g., `fullname`, `phone_number` etc.
+    pub fn fieldRename(
+        db: *quill,
+        comptime name: []const u8,
+        comptime from: []const u8,
+        comptime to: []const u8
+    ) !void {
+        const fmt_str = "ALTER TABLE {s} RENAME COLUMN {s} TO {s};";
+        const sql = fmt.comptimePrint(fmt_str, .{name, from, to});
+        var result = try db.exec(sql);
+        defer result.destroy();
+
+        debug.assert(result.count() == 0);
+    }
+
+    // TODO: when builder is competed
+    pub fn fieldRemove(
+        db: *quill,
+        comptime T: type,
+        comptime from: []const u8
+    ) !void {
+        if (@typeInfo(T) != .@"struct") {
+            const err_str = "quill: Type of `{s}` Must be a Model Structure";
+            @compileError(fmt.comptimePrint(err_str, .{@typeName(T)}));
+        }
+
+        if (!@hasField(T, "uuid")) {
+            const err_str = "quill: Model Structure `{s}` has no `uuid` Field";
+            @compileError(fmt.comptimePrint(err_str, .{@typeName(T)}));
+        }
+
+        const new_table = comptime builder.Container.create(T, from ++ "_new");
+
+        comptime var fields: []const u8 = "";
+        inline for (@typeInfo(T).@"struct".fields) |f| {
+           fields = fields ++ fmt.comptimePrint("{s}, ", .{f.name});
+        }
+
+        const fmt_str = "INSERT INTO {s}_new ({s}) SELECT {s} FROM {s};";
+        const data = fields[0..fields.len - 2];
+        const copy_data = fmt.comptimePrint(fmt_str, .{from, data, data, from});
+
+        try quill.AcidSession.start(db, null);
+        errdefer quill.AcidSession.end(db, .Rollback, null) catch |err| {
+            std.log.err("{s}\n", .{@errorName(err)});
+        };
+
+        _ = try db.exec(new_table);
+        _ = try db.exec(copy_data);
+        try delete(db, from, .Retain);
+        try rename(db, from ++ "_new", from);
+
+        try quill.AcidSession.end(db, .Commit, null);
     }
 };
 

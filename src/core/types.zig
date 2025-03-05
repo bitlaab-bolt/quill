@@ -192,39 +192,7 @@ pub fn convertFrom(
         @compileError(ctPrint(fmt_str, .{@typeName(record)}));
     }
 
-    const s_info = info.@"struct";
-    // const count = bind.parameterCount();
-
-    // if (count != s_info.fields.len) {
-    //     const t_name = @typeName(@TypeOf(record));
-
-    //     if (count < s_info.fields.len) {
-    //         const err_str = "Missing `{s}` from `{s}` on SQL Statement";
-    //         inline for (s_info.fields) |field| {
-    //             _ = bind.parameterIndex(":" ++ field.name) catch {
-    //                 log.warn(err_str, .{field.name, t_name});
-    //             };
-    //         }
-    //     } else {
-    //         const err_str = "Missing `{s}` on `{s}` from SQL Statement";
-    //         for (0..@intCast(count)) |i| {
-    //             const pos = @as(i32, @intCast(i)) + 1;
-    //             const name = (try bind.parameterName(pos)).?;
-    //             defer heap.free(name);
-
-    //             var exist: bool = false;
-    //             inline for (s_info.fields) |field| {
-    //                 if (mem.eql(u8, name, ":" ++ field.name)) exist = true;
-    //             }
-
-    //             if (!exist) log.warn(err_str, .{name, t_name});
-    //         }
-    //     }
-
-    //     return Error.MismatchedFields;
-    // }
-
-    inline for (s_info.fields) |field| {
+    inline for (info.@"struct".fields) |field| {
         const pos = try bind.parameterIndex(":" ++ field.name);
         const value = @field(record, field.name);
 
