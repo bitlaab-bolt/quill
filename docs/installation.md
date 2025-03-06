@@ -30,24 +30,4 @@ exe.root_module.addImport("quill", quill.module("quill"));
 lib.root_module.addImport("quill", quill.module("quill"));
 ```
 
-On windows, you must find:
-
-```zig title="build.zig"
-const exe = b.addExecutable(.{
-    .name = "your_project",
-    .root_source_file = b.path("src/main.zig"),
-    .target = target,
-    .optimize = optimize,
-});
-```
-
-And, then paste the following code after that block:
-
-```zig title="build.zig"
-// Adding cross-platform dependency
-switch (target.query.os_tag orelse builtin.os.tag) {
-    .macos => {},
-    .windows => exe.linkLibC(),
-    else => @panic("Codebase is not tailored for this platform!")
-}
-```
+**Remarks:** On windows, link **Lib C** with your project executable. e.g., `exe.linkLibC()`.
