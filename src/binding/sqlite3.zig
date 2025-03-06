@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
@@ -135,7 +136,9 @@ pub const ExecResult = struct {
         if (self.offset < self.result.items.len) {
             defer self.offset += 1;
             return self.result.items[self.offset];
-        } else return null;
+        } else {
+            return null;
+        }
     }
 
     fn callback (
@@ -148,7 +151,7 @@ pub const ExecResult = struct {
 
         const result: *ExecResult = @ptrCast(@alignCast(args));
         callbackZ(result, column_texts, column_names) catch |err| {
-            std.log.err("{s}\n", .{@errorName(err)});
+            log.err("{s}\n", .{@errorName(err)});
             return -1;
         };
 
@@ -227,7 +230,7 @@ pub const Bind = struct {
     pub fn parameterIndex(self: *Bind, name: []const u8) !i32 {
         const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
         if (index == 0) {
-            std.log.warn("Missing Field Name `{s}`\n", .{name});
+            log.warn("Missing Field Name `{s}`\n", .{name});
             return Error.BindParameterNotFound;
         } else {
             return @intCast(index);
@@ -427,7 +430,7 @@ fn @"error"(code: c_int) Error {
         sqlite3.SQLITE_MISUSE => Error.InterfaceMisuse,
         sqlite3.SQLITE_CONSTRAINT => Error.UnmetConstraint,
         else => {
-            std.log.err("Encountered Code - {d}\n", .{code});
+            log.err("Encountered Code - {d}\n", .{code});
             return Error.UnknownError;
         }
     };
