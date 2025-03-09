@@ -1,3 +1,5 @@
+//! # Underlying SQLite v3.48.0 API Bindings
+
 const std = @import("std");
 const log = std.log;
 const mem = std.mem;
@@ -63,7 +65,7 @@ pub fn openV2(filename: []const u8, flags: i32) !Database {
 
 pub fn closeV2(db: Database) void {
     const rv = sqlite3.sqlite3_close_v2(db);
-    if (rv != 0) std.log.err("{s}\n", .{@errorName(@"error"(rv))});
+    if (rv != 0) log.err("{s}", .{@errorName(@"error"(rv))});
 }
 
 pub fn free(any: ?*anyopaque) void { sqlite3.sqlite3_free(any); }
@@ -78,8 +80,7 @@ pub fn exec(heap: Allocator, db: Database, sql: []const u8) !ExecResult {
     );
 
     if (err_msg != null) {
-        const data: []const u8 = std.mem.span(err_msg);
-        std.debug.print("{s}\n", .{data});
+        log.err("{s}", .{mem.span(err_msg)});
         free(@ptrCast(err_msg));
     }
 
@@ -151,7 +152,7 @@ pub const ExecResult = struct {
 
         const result: *ExecResult = @ptrCast(@alignCast(args));
         callbackZ(result, column_texts, column_names) catch |err| {
-            log.err("{s}\n", .{@errorName(err)});
+            log.err("{s}", .{@errorName(err)});
             return -1;
         };
 
@@ -230,7 +231,7 @@ pub const Bind = struct {
     pub fn parameterIndex(self: *Bind, name: []const u8) !i32 {
         const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
         if (index == 0) {
-            log.warn("Missing Field Name `{s}`\n", .{name});
+            log.warn("Missing Field Name `{s}`", .{name});
             return Error.BindParameterNotFound;
         } else {
             return @intCast(index);
@@ -430,7 +431,7 @@ fn @"error"(code: c_int) Error {
         sqlite3.SQLITE_MISUSE => Error.InterfaceMisuse,
         sqlite3.SQLITE_CONSTRAINT => Error.UnmetConstraint,
         else => {
-            log.err("Encountered Code - {d}\n", .{code});
+            log.err("Encountered Code - {d}", .{code});
             return Error.UnknownError;
         }
     };

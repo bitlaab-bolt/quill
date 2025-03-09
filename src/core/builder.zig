@@ -14,6 +14,7 @@ const Dt = @import("./types.zig").DataType;
 const Str = []const u8;
 const ctPrint = fmt.comptimePrint;
 
+/// # SQLite Database Table Statement Builder
 pub const Container = struct {
     /// # Generates `CREATE TABLE` SQL Statement
     /// - `T` - Record Model structure
@@ -151,12 +152,16 @@ const Operator = enum {
     /// Your input data slice must be the length of 2. e.g., `&.{10, 20}`
     between,
     /// Checks - In List of Values
+    /// Your input data slice length must be known at compile-time
     in,
     /// Checks - Not In List of Values
+    /// Your input data slice length must be known at compile-time
     @"!in",
     /// Checks - NULL Values
+    /// No filter structure field is required for this operation
     @"null",
     /// Checks - Not NULL Value
+    /// No filter structure field is required for this operation
     @"!null",
 
     /// # Generates SQL Text for a Given Field
@@ -311,8 +316,10 @@ const Operator = enum {
     }
 };
 
+/// # Logical Operators for Data Filtering
 const ChainOperator = enum { AND, OR, NOT };
 
+/// # SQLite Database Row Statement Builder
 pub const Record = struct {
     const Constraint = enum { All, Exact };
     const Action = enum { Default, Replace, Ignore };
@@ -325,7 +332,7 @@ pub const Record = struct {
         DESC: Str
     };
 
-    /// # Ordered Function Execution
+    /// # Ordered Function Execution for Query Chain
     fn FnChain(comptime T: type) type {
         if (@typeInfo(T) != .@"enum") {
             const err_str = "quill: `{s}` Must be an `enum` Type";
@@ -362,6 +369,9 @@ pub const Record = struct {
         };
     }
 
+    //##########################################################################
+    //# FIND INTERFACE --------------------------------------------------------#
+    //##########################################################################
 
     /// # Generates `SELECT` SQL Statement
     /// - `T` - Record View structure
@@ -511,6 +521,10 @@ pub const Record = struct {
         };
     }
 
+    //##########################################################################
+    //# COUNT INTERFACE -------------------------------------------------------#
+    //##########################################################################
+
     /// # Generates `SELECT COUNT(*)` SQL Statement
     /// - `T` - Record Filter structure
     /// - `from` - Container name e.g., `users`, `accounts` etc.
@@ -573,6 +587,10 @@ pub const Record = struct {
         };
     }
 
+    //##########################################################################
+    //# CREATE INTERFACE ------------------------------------------------------#
+    //##########################################################################
+
     /// # Generates `INSERT` SQL Statement
     /// - `T` - Record Model structure
     /// - `to` - Container name e.g., `users`, `accounts` etc.
@@ -620,6 +638,10 @@ pub const Record = struct {
             pub fn statement(self: *Self) Str { return Common.statement(self); }
         };
     }
+
+    //##########################################################################
+    //# UPDATE INTERFACE ------------------------------------------------------#
+    //##########################################################################
 
     /// # Generates `UPDATE` SQL Statement
     /// - `T` - Record Model structure
@@ -709,6 +731,10 @@ pub const Record = struct {
         };
     }
 
+    //##########################################################################
+    //# REMOVE INTERFACE ------------------------------------------------------#
+    //##########################################################################
+
     /// # Generates `DELETE` SQL Statement
     /// - `T` - Record Filter structure
     /// - `from` - Container name e.g., `users`, `accounts` etc.
@@ -783,6 +809,10 @@ pub const Record = struct {
         };
     }
 };
+
+//##############################################################################
+//# GENERIC FUNCTIONALITY -----------------------------------------------------#
+//##############################################################################
 
 /// # Contains Generic Functionality
 const Common = struct {

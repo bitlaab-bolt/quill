@@ -35,21 +35,21 @@ const Result = Any(Gender);
 
 TypeCasts a given data type into SQLite column data when evaluated.
 
-**Example 01:** Converts `enum` data into a SQLite `Integer` column.
+**Example 01:** Converts `enum` data into a SQLite's `Integer` column.
 
 ```zig
 const Gender = enum { Male, Female };
 const Result = CastInto(.Int, Gender);
 ```
 
-**Example 02:** Converts `enum` data into a SQLite `Text` column.
+**Example 02:** Converts `enum` data into a SQLite's `Text` column.
 
 ```zig
 const Gender = enum { Male, Female };
 const Result = CastInto(.Text, Gender);
 ```
 
-**Example 03:** Converts `struct` data into a SQLite `Text` column.
+**Example 03:** Converts `struct` data into a SQLite's `Text` column.
 
 ```zig
 const User = struct { name: []const u8, age: u8 };

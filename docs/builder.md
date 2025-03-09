@@ -2,7 +2,7 @@
 
 Quill's statement builder allows us to build SQL statement at Compile-Time. Thus, well optimized for STMT caching and evaluates only once at build time.
 
-For more details see - **API Reference** at the bottom of this page.
+For more details see - [API Reference](/reference).
 
 ## Prerequisites
 
@@ -222,6 +222,3 @@ const sql = comptime blk: {
 
 std.debug.print("{s}\n", .{sql});
 ```
-
-# API Reference
-

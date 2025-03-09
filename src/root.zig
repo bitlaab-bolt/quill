@@ -1,4 +1,4 @@
-//! # SQlite Library Binding
+//! # SQLite Library Binding
 //! - See documentation at - https://bitlaabquill.web.app/
 
 pub const Uuid = @import("./core/uuid.zig");
@@ -8,7 +8,7 @@ pub const Builtins = @import("./core/builtins.zig");
 pub const QueryBuilder = @import("./core/builder.zig");
 pub const Types = @import("./core/types.zig").DataType;
 
-/// # API Bindings from Underlying SQLite Library
-pub const Api = struct {
+/// # Native API Bindings from Underlying SQLite Library
+pub const Native = struct {
     pub const sqlite3 = @import("./binding/sqlite3.zig");
 };

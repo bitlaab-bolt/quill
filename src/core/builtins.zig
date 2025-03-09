@@ -16,6 +16,7 @@ const Error = error { FailedIntegrityChecks };
 /// # Contains Index Related Functionalities
 pub const Index = struct {
     const Mode = enum { Default, Unique };
+    const Origin = enum { Created, UniqueConstraint, PrimaryKey };
 
     const Info = struct {
         sn: u8,
@@ -24,8 +25,6 @@ pub const Index = struct {
         origin: Origin,
         partial: bool
     };
-
-    const Origin = enum { Created, UniqueConstraint, PrimaryKey };
 
     /// # Creating an User Defined Field Index
     /// **IMPORTANT:** Always use `idx_` prefix for your index name

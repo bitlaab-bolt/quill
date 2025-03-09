@@ -1,67 +1,7 @@
 const std = @import("std");
 
 const quill = @import("quill");
-const Uuid = quill.Uuid;
 const Quill = quill.Quill;
-const Dt = quill.Types;
-const Qb = quill.QueryBuilder;
-const DateTime = quill.DateTime;
-
-const Builtins = quill.Builtins;
-
-const Gender = enum(u8) { Male = 1, Female = 2 };
-const Social = struct { website: []const u8, username: [] const u8 };
-
-pub const Model = struct {
-    uuid: Dt.CastInto(.Blob, Dt.Slice),
-    name1: Dt.CastInto(.Text, Dt.Slice),
-    name2: ?Dt.CastInto(.Text, Dt.Slice),
-    balance1: Dt.Float,
-    balance2: ?Dt.Float,
-    age1: Dt.Int,
-    age2: ?Dt.Int,
-    verified1: Dt.Bool,
-    verified2: ?Dt.Bool,
-    gender1: Dt.CastInto(.Int, Gender),
-    gender2: ?Dt.CastInto(.Int, Gender),
-    gender3: Dt.CastInto(.Text, Gender),
-    gender4: ?Dt.CastInto(.Text, Gender),
-    about1: Dt.CastInto(.Blob, Dt.Slice),
-    about2: ?Dt.CastInto(.Blob, Dt.Slice),
-    social1: Dt.CastInto(.Text, Social),
-    social2: ?Dt.CastInto(.Text, Social),
-    social3: Dt.CastInto(.Text, []const Social),
-    social4: ?Dt.CastInto(.Text, []const Social)
-};
-
-pub const View = struct {
-    uuid: Dt.Slice,
-    name1: Dt.Slice,
-    name2: ?Dt.Slice,
-    balance1: Dt.Float,
-    balance2: ?Dt.Float,
-    age1: Dt.Int,
-    age2: ?Dt.Int,
-    verified1: Dt.Bool,
-    verified2: ?Dt.Bool,
-    gender1: Dt.Any(Gender),
-    gender2: ?Dt.Any(Gender),
-    gender3: Dt.Any(Gender),
-    gender4: ?Dt.Any(Gender),
-    about1: Dt.Slice,
-    about2: ?Dt.Slice,
-    social1: Dt.Any(Social),
-    social2: ?Dt.Any(Social),
-    social3: Dt.Any([]const Social),
-    social4: ?Dt.Any([]const Social)
-};
-
-pub const FilterUser = struct { name1: Dt.Slice, age1: Dt.Int };
-
-pub const ModelProfile = struct {
-    name2: ?Dt.CastInto(.Text, Dt.Slice),
-    age2: ?Dt.Int,
-};
 
 
 pub fn main() !void {
@@ -75,13 +15,6 @@ pub fn main() !void {
     var db = try Quill.open(heap, "hello.db");
     defer db.close();
 
-    
-    const urn_string = "01956633-4BAB-7BD9-9209-7365F2DB6F2E";
-    const id = try Uuid.fromUrn(urn_string);
-    std.debug.print("{any}\n", .{id});
-
-    const ts_ms = DateTime.timestamp();
-    std.debug.print("Current Timestamp: {d}\n", .{ts_ms});
+    std.debug.print("Hello, World!\n", .{});
 
 }
-

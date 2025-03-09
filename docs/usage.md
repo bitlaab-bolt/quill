@@ -241,6 +241,8 @@ defer crud.destroy();
 const results = try crud.readMany(View, null);
 defer crud.free(results);
 
+std.debug.print("Found Records: {d}\n", .{results.len});
+
 for (results) |result| {
     std.debug.print("Find Result For: {s}\n", .{result.name1});
 }
@@ -268,6 +270,8 @@ defer crud.destroy();
 
 const results = try crud.readMany(View, filter);
 defer crud.free(results);
+
+std.debug.print("Found Records: {d}\n", .{results.len});
 
 for (results) |result| {
     std.debug.print("Find Result For: {s}\n", .{result.name1});

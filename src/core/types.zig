@@ -52,9 +52,9 @@ pub const DataType = struct {
 
     const CastKind = enum { Int, Text, Blob };
 
-    /// # TypeCasts into SQlite `Integer`, `Text`, or `Blob` Data
+    /// # TypeCasts into SQLite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data binding
-    /// - `comptime T` - Given type must be an `enum` or a `struct`
+    /// - `T` - Given type must be an `enum` or a `struct`
     pub fn CastInto(kind: CastKind, comptime T: type) type {
         switch (kind) {
             .Int => {
@@ -104,8 +104,6 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
     }
 
     const s_info = info.@"struct";
-    //const count = bind.parameterCount();
-
     inline for (s_info.fields) |field| {
         const value = @field(filter, field.name);
 
@@ -133,22 +131,18 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
                             // e.g., `:_name999_` max limit is 999
                             var buff: [fmt_str.len]u8 = undefined;
                             const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
-                            std.debug.print("Tag: |{s}|\n", .{tag});
                             const pos = try bind.parameterIndex(tag);
-                            // _ = pos;
                             try bind.int64(pos, value[i - 1]);
                         }
                     },
                     .TextList => {
                         for (1..value.len + 1) |i| {
-                            // std.debug.print("{s}\n", .{value[i]});
                             const fmt_str = ":_" ++ field.name ++ "{d}_";
 
                             // e.g., `:_name999_` max limit is 999
                             var buff: [fmt_str.len]u8 = undefined;
                             const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
                             const pos = try bind.parameterIndex(tag);
-                            // _ = pos;
                             try bind.text(pos, value[i - 1]);
                         }
                     }
@@ -167,16 +161,15 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
 const FilterType = enum { Text, IntList, TextList };
 
 fn getFilterType(ptr: Type.Pointer) FilterType {
+    const err_msg = "quill: Use `u8`, `i64` or `[]const u8` Slices Instead";
     DataType.constSlice(ptr);
     return switch (ptr.child) {
         u8 => .Text,
         i64 => .IntList,
         []const u8 => .TextList,
-        else => @compileError("Use `u8`, `i64` or `[]const u8` Slices Instead")
+        else => @compileError(err_msg)
     };
 }
-
-
 
 /// # Converts Field Data from the Given Record Structure
 /// **Remarks:** Intended for internal use only
@@ -272,21 +265,15 @@ fn typeCast(
         },
         else => {
             switch (T) {
-                DataType.Int => {
-                    try bind.int64(i, value);
-                },
+                DataType.Int => try bind.int64(i, value),
                 DataType.Bool => {
                     switch (value) {
                         true => try bind.int(i, 1),
                         false => try bind.int(i, 0)
                     }
                 },
-                DataType.Float => {
-                    try bind.double(i, value);
-                },
-                else => {
-                    @compileError(ctPrint(err_str3, .{@typeName(T)}));
-                }
+                DataType.Float => try bind.double(i, value),
+                else => @compileError(ctPrint(err_str3, .{@typeName(T)}))
             }
         }
     }
@@ -330,7 +317,6 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
 
 /// # Cross Checks Column and Structure Fields
 fn matchRecord(col: *Column, fields: []const Type.StructField) bool {
-    // TODO: Show which field name is missing
     if (fields.len != col.count()) return false;
 
     var count: i32 = 0;

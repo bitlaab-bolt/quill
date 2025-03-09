@@ -11,7 +11,7 @@ const jsonic = @import("jsonic");
 
 const types = @import("./types.zig");
 
-pub const sqlite3 = @import("../binding/sqlite3.zig");
+const sqlite3 = @import("../binding/sqlite3.zig");
 const STMT = sqlite3.STMT;
 const Flag = sqlite3.OpenFlag;
 const Option = sqlite3.Option;
@@ -295,8 +295,7 @@ pub const AcidSession = struct {
     }
 };
 
-// TODO
-// For streaming large binary object from database
-pub const Stream = struct {
-
+// TODO: For streaming large binary object from database
+const Streams = struct {
+    
 };

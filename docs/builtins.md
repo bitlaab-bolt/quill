@@ -10,7 +10,7 @@ const Builtins = quill.Builtins;
 
 ### Create
 
-Creates an used defined index for a given container field.
+Creates an user defined index for a given container field.
 
 ```zig
 try Builtins.Index.create(&db, "idx_name1", "users", "name1", .Default);
@@ -19,7 +19,7 @@ try Builtins.Index.create(&db, "idx_name1", "users", "name1", .Default);
 
 ### Remove
 
-Removes an existing used defined index.
+Removes an existing user defined index.
 
 ```zig
 try Builtins.Index.remove(&db, "idx_name1");
@@ -95,7 +95,7 @@ try Builtins.Container.fieldRename(&db, "users", "other2", "another");
 
 ### Remove an Existing Field
 
-Removing an existing field is tricky because SQLite doesn't support it. However the following function function uses a workaround for that. Be cautious about the existing code breakage.
+Removing an existing field is tricky because SQLite doesn't support it. However the following function uses a workaround for this. Be cautious about the existing code breakage.
 
 ```zig
 try Builtins.Container.fieldRemove(&db, Model, "users");
