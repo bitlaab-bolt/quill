@@ -10,7 +10,7 @@ If you are using previous release of Quill for some reason, you can generate doc
 
 ## Generate Code Documentation
 
-To generate Zig's API documentation, navigate to your project directory. e.g., `cd my_awesome_project` and run:
+To generate Zig's API documentation, navigate to your project directory and run:
 
 ```sh
 zig build-lib -femit-docs=docs/zig-docs src/root.zig

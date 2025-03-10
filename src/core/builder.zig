@@ -16,16 +16,25 @@ const ctPrint = fmt.comptimePrint;
 
 /// # SQLite Database Table Statement Builder
 pub const Container = struct {
+    const PrimaryKey = enum { RowId, Uuid };
+
     /// # Generates `CREATE TABLE` SQL Statement
     /// - `T` - Record Model structure
     /// - `name` - Container name e.g., `users`, `accounts` etc.
-    pub fn create(comptime T: type, comptime name: Str) Str {
+    /// - `pk` - Primary Key type of the targeted container
+    ///
+    /// **Remarks:** `Uuid` prevents Primary Key Localization problem, but blob
+    /// streaming requires `RowId`. When `pk` is set to `RowId` then uuid field
+    /// of a Model structure (if any) enforces **UNIQUE** constraint. You don't
+    /// have to provide a primary key in such cases but including an uuid field
+    /// could prevent Primary Key Localization. Making best of the both worlds!
+    pub fn create(T: type, name: Str, pk: PrimaryKey) Str {
         if (@typeInfo(T) != .@"struct") {
             const err_str = "quill: Type of `{s}` Must be a Model Structure";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
-        if (!@hasField(T, "uuid")) {
+        if (pk == .Uuid and !@hasField(T, "uuid")) {
             const err_str = "quill: Model Structure `{s}` has no `uuid` Field";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
@@ -34,18 +43,20 @@ pub const Container = struct {
         inline for (@typeInfo(T).@"struct".fields) |f| {
             switch (@typeInfo(f.type)) {
                 .optional => |o| {
-                    const tokens = comptime genToken(o.child, f.name, true);
+                    const tokens = comptime genToken(o.child, f.name, true, pk);
                     fields = fields ++ tokens;
                 },
                 else => {
-                    const tokens = comptime genToken(f.type, f.name,false);
+                    const tokens = comptime genToken(f.type, f.name,false, pk);
                     fields = fields ++ tokens;
                 }
             }
         }
 
         const sql_head = "CREATE TABLE IF NOT EXISTS " ++ name ++ " (\n";
-        const sql_tail = "\n) STRICT, WITHOUT ROWID;";
+        const sql_tail = switch (pk) {
+            .RowId => "\n) STRICT;", .Uuid => "\n) STRICT, WITHOUT ROWID;"
+        };
         const data = fields[0..fields.len - 2];
 
         return ctPrint("{s} {s} {s}", .{sql_head, data, sql_tail});
@@ -53,7 +64,7 @@ pub const Container = struct {
 
     /// # Generates SQL Text for a Given Field
     /// **Remarks:** Compile-Time function e.g., `comptime getToken()`
-    fn genToken(T: type, field: Str, opt: bool) Str {
+    fn genToken(T: type, field: Str, opt: bool, pk: PrimaryKey) Str {
         const err_str = "quill: Malformed Type `{s}`";
 
         switch (@typeInfo(T)) {
@@ -99,7 +110,10 @@ pub const Container = struct {
                 } else if (@hasField(T, "blob")) {
                     if (mem.eql(u8, field, "uuid")) {
                         if (!opt) {
-                            const fmt_str = "\t{s} BLOB PRIMARY KEY,\n";
+                            const fmt_str = switch (pk) {
+                                .RowId => "\t{s} BLOB UNIQUE,\n",
+                                .Uuid => "\t{s} BLOB PRIMARY KEY,\n"
+                            };
                             return ctPrint(fmt_str, .{field});
                         } else {
                             @compileError("quill: UUID Can't be Optional");

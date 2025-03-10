@@ -1,10 +1,12 @@
 .{
-    .name = "quill",
+    .name = .quill,
     .version = "0.1.0",
+    .fingerprint = 0x943b97bbcda5af24,
+    .minimum_zig_version = "0.15.0-dev.14+21620f3c6",
     .dependencies = .{
         .jsonic = .{
-            .url = "https://github.com/bitlaab-bolt/jsonic/archive/refs/tags/v0.3.0.zip",
-            .hash = "122033cfda122b606466ea1783f377a6a69fdaa36149c96a100749d10dcce0591e85",
+            .url = "https://github.com/bitlaab-bolt/jsonic/archive/refs/tags/v0.3.1.zip",
+            .hash = "jsonic-0.3.1-Hz02HMMwAADgncRAxca43s5-Q3LIUVx30OjDyqz3bUEi",
         },
     },
     .paths = .{

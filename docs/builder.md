@@ -81,11 +81,22 @@ pub const ModelProfile = struct {
 To build SQL Statement for a record container, copy and run:
 
 ```zig
-const sql = comptime Qb.Container.create(Model, "users");
+const sql = comptime Qb.Container.create(Model, "users", .Uuid);
 std.debug.print("{s}\n", .{sql});
 ```
 
-The above example will generate a **CREATE TABLE** SQL statement from the given Model.
+The above example will generate a **CREATE TABLE** SQL statement **WITHOUT ROWID** from the given Model.
+
+To build SQL Statement for a record container with implicit **RowID**, copy and run:
+
+```zig
+const sql = comptime Qb.Container.create(Model, "users", .RowId);
+std.debug.print("{s}\n", .{sql});
+```
+
+Checkout the [source](/zig-docs/index.html#src/root/core/builder.zig) for more details.
+
+**Remarks:** Containers with implicit **RowId** will automatically generate a primary key field named `rowid`. Thus, make sure to add this field in your View structure if `rowid` is required. Only create such container when BlobStream is required.
 
 ## Record
 

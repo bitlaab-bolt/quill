@@ -13,9 +13,11 @@ const types = @import("./types.zig");
 
 const sqlite3 = @import("../binding/sqlite3.zig");
 const STMT = sqlite3.STMT;
+const Blob = sqlite3.Blob;
 const Flag = sqlite3.OpenFlag;
 const Option = sqlite3.Option;
 const Database = sqlite3.Database;
+const BlobOption = sqlite3.BlobOption;
 const ExecResult = sqlite3.ExecResult;
 
 pub const Result = sqlite3.Result;
@@ -270,6 +272,7 @@ pub const CRUD = struct {
     }
 };
 
+/// # Provides Atomic Transaction
 pub const AcidSession = struct {
     const Action = enum { Commit, Rollback };
     const Callback = *const fn(result: ExecResult) void;
@@ -295,7 +298,73 @@ pub const AcidSession = struct {
     }
 };
 
-// TODO: For streaming large binary object from database
-const Streams = struct {
-    
+/// # Provides Stream Interface for SQLite Blob Data
+pub const BlobStream = struct {
+    const Error = error { BufferIsTooLong };
+
+    db: *Self,
+    blob: Blob,
+    length: usize,
+    cursor: usize = 0,
+
+    /// # Opens a Stream Interface
+    /// - `container` - Container name e.g., `users`, `accounts` etc.
+    /// - `field` - Field name e.g., `img_data`, `vid_data` etc.
+    /// - `rowid` - Primary Key of a given Record
+    /// - `opt` - Read-write permission on the blob data
+    ///
+    /// **Remarks:** Given container must have implicit `rowid` as Primary Key
+    pub fn open(
+        db: *Self,
+        container: []const u8,
+        field: []const u8,
+        rowid: i64,
+        opt: BlobOption,
+    ) !BlobStream {
+        const dbi = db.instance;
+        const handle = try sqlite3.blobOpen(dbi, container, field, rowid, opt);
+        const length: usize = @intCast(sqlite3.blobBytes(handle));
+
+        return .{.db = db, .blob = handle, .length = length};
+    }
+
+    /// # Closes the Stream Interface
+    pub fn close(self: *BlobStream) void {
+        sqlite3.blobClose(self.blob) catch |err| {
+            log.err("{s}", .{@errorName(err)});
+        };
+    }
+
+    /// # Reads Blob Data as Chunked Slice
+    pub fn read(self: *BlobStream, buff: []u8) !?[]const u8 {
+        const remaining = self.length - self.cursor;
+        const len = if (remaining >= buff.len) buff.len else remaining;
+
+        if (len == 0) return null;
+
+        const data = try sqlite3.blobRead(
+            self.blob, buff, @intCast(len), @intCast(self.cursor)
+        );
+        self.cursor += len;
+        return data;
+    }
+
+    /// # Writes Blob Data at a Given Offset Position
+    /// **Remarks:** Only modify the contents of the Blob. The overall Blob size
+    /// can't be increased or decreased. Also, `open()` must be called with opt
+    /// `.ReadWrite` otherwise error **Locked** will be returned.
+    pub fn write(self: *BlobStream, buff: []const u8, offset: usize) !void {
+        debug.assert(offset < self.length);
+        const available = self.length - offset;
+
+        if (available < buff.len) return Error.BufferIsTooLong;
+        try sqlite3.blobWrite(
+            self.blob, buff, @intCast(buff.len), @intCast(offset)
+        );
+    }
+
+    /// # Returns the Total Blob Size in Bytes
+    pub fn size(self: *BlobStream) usize {
+        return @intCast(sqlite3.blobBytes(self.blob));
+    }
 };

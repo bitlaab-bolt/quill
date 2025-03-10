@@ -16,5 +16,4 @@ pub fn main() !void {
     defer db.close();
 
     std.debug.print("Hello, World!\n", .{});
-
 }

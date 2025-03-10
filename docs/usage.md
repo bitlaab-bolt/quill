@@ -406,6 +406,43 @@ defer crud.destroy();
 try crud.remove(filter, resultCallback);
 ```
 
+## Blob Stream
+
+Provides a stream interface for progressive read, write on large Blob data.
+
+### Read form Stream
+
+Following example will progressively read blob data as a chunked buffer.
+
+```zig
+const BlobStream = Quill.BlobStream;
+
+var buffer: [1024 * 8]u8 = undefined;
+var blob = try BlobStream.open(&db, "users", "data", 1, .Read);
+defer blob.close();
+
+while(try blob.read(&buffer)) |data| {
+    std.debug.print("Chunk: {s}\n", .{data});
+}
+```
+
+### Write to Stream
+
+Following example will write a chunked buffer data to the given offset position.
+
+```zig
+const BlobStream = Quill.BlobStream;
+
+var blob = try BlobStream.open(&db, "users", "data", 1, .ReadWrite);
+defer blob.close();
+
+const data = "World!";
+const offset = blob.size() - 6;
+try blob.write(data, offset);
+```
+
+**Remarks:** Make sure the `.ReadWrite` permission is set on `open()`. 
+
 ## Miscellaneous
 
 Quill has some additional utility modules for repeated codes. Import following module to use through out the examples.

@@ -12,18 +12,22 @@ const sqlite3 = @cImport({
 });
 
 
+const Str = []const u8;
+
 const Error = error {
+    Locked,
     UnableToOpen,
     InterfaceMisuse,
     ConnectionIsBusy,
     UnableToExecuteQuery,
     BindParameterNotFound,
     UnmetConstraint,
-    UnknownError,
+    UnknownError
 };
 
 pub const Database = ?*sqlite3.sqlite3;
 pub const STMT = ?*sqlite3.sqlite3_stmt;
+pub const Blob = ?*sqlite3.sqlite3_blob;
 
 pub const OpenFlag = enum(c_int) {
     Create = sqlite3.SQLITE_OPEN_CREATE,
@@ -56,7 +60,7 @@ pub fn shutdown() !void {
     if (rv != 0) return @"error"(rv);
 }
 
-pub fn openV2(filename: []const u8, flags: i32) !Database {
+pub fn openV2(filename: Str, flags: i32) !Database {
     var db: Database = undefined;
     const rv = sqlite3.sqlite3_open_v2(filename.ptr, &db, flags, null);
     if (rv != 0) return @"error"(rv);
@@ -70,7 +74,7 @@ pub fn closeV2(db: Database) void {
 
 pub fn free(any: ?*anyopaque) void { sqlite3.sqlite3_free(any); }
 
-pub fn exec(heap: Allocator, db: Database, sql: []const u8) !ExecResult {
+pub fn exec(heap: Allocator, db: Database, sql: Str) !ExecResult {
     var result = ExecResult.create(heap);
     errdefer result.destroy();
 
@@ -94,7 +98,7 @@ pub fn exec(heap: Allocator, db: Database, sql: []const u8) !ExecResult {
 /// # Retrieves SQL Execution Results
 /// **WARNING:** You must call `destroy()`, when you are done with the result
 pub const ExecResult = struct {
-    const Column = struct { name: []const u8, data: []const u8 };
+    const Column = struct { name: Str, data: Str };
 
     heap: Allocator,
     offset: usize = 0,
@@ -166,8 +170,8 @@ pub const ExecResult = struct {
 
         var i: usize = 0;
         while (ct[i] != null) : (i += 1) {
-            const name: []const u8 = mem.span(cn[i]);
-            const data: []const u8 = mem.span(ct[i]);
+            const name: Str = mem.span(cn[i]);
+            const data: Str = mem.span(ct[i]);
             try list.append(try makeColumn(result.heap, name, data));
 
         }
@@ -177,11 +181,7 @@ pub const ExecResult = struct {
 
     /// # Makes a Heap Allocated Column
     /// **WARNING:** Allocated memory must be freed by the caller
-    fn makeColumn(
-        heap: Allocator,
-        name: []const u8,
-        data: []const u8
-    ) !ExecResult.Column {
+    fn makeColumn(heap: Allocator, name: Str, data: Str) !ExecResult.Column {
         const alloc_name = try heap.alloc(u8, name.len);
         mem.copyForwards(u8, alloc_name, name);
 
@@ -192,7 +192,7 @@ pub const ExecResult = struct {
     }
 };
 
-pub fn prepareV3(db: Database, sql: []const u8) !STMT {
+pub fn prepareV3(db: Database, sql: Str) !STMT {
     var stmt: STMT = undefined;
 
     // Contains the next statement for a multi-statement SQL
@@ -228,7 +228,7 @@ pub const Bind = struct {
         return @intCast(count);
     }
 
-    pub fn parameterIndex(self: *Bind, name: []const u8) !i32 {
+    pub fn parameterIndex(self: *Bind, name: Str) !i32 {
         const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
         if (index == 0) {
             log.warn("Missing Field Name `{s}`", .{name});
@@ -239,7 +239,7 @@ pub const Bind = struct {
     }
 
     /// # **WARNING:** Return value must be freed by the caller
-    pub fn parameterName(self: *Bind, index: i32) !?[]const u8 {
+    pub fn parameterName(self: *Bind, index: i32) !?Str {
         const name = sqlite3.sqlite3_bind_parameter_name(self.stmt, index);
 
         if (name == null) return null;
@@ -277,7 +277,7 @@ pub const Bind = struct {
         if (rv != 0) return @"error"(rv);
     }
 
-    pub fn text(self: *Bind, index: i32, data: []const u8) !void {
+    pub fn text(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
         const val: [*c]const u8 = @ptrCast(data);
@@ -288,7 +288,7 @@ pub const Bind = struct {
         if (rv != 0) return @"error"(rv);
     }
 
-    pub fn blob(self: *Bind, index: i32, data: []const u8) !void {
+    pub fn blob(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
         const val: ?*const anyopaque = @ptrCast(data.ptr);
@@ -330,8 +330,46 @@ pub fn changes64(db: Database) i64 {
     return @as(i64, sqlite3.sqlite3_changes64(db));
 }
 
-pub fn errMsg(db: Database) []const u8 {
+pub fn errMsg(db: Database) Str {
     return mem.span(sqlite3.sqlite3_errmsg(db));
+}
+
+pub const BlobOption = enum { Read, ReadWrite };
+
+pub fn blobOpen(
+    db: Database,
+    table: Str,
+    column: Str,
+    rowid: i64,
+    opt: BlobOption
+) !Blob {
+    const flag: c_int = @intFromEnum(opt);
+
+    var blob: Blob  = null;
+    const rv = sqlite3.sqlite3_blob_open(db, "main", table.ptr, column.ptr, @intCast(rowid), flag, &blob);
+    return if (rv != 0) @"error"(rv) else blob;
+}
+
+pub fn blobClose(blob: Blob) !void {
+    const rv = sqlite3.sqlite3_blob_close(blob);
+    if (rv != 0) return @"error"(rv);
+}
+
+pub fn blobBytes(blob: Blob) i32 {
+    return @intCast(sqlite3.sqlite3_blob_bytes(blob));
+}
+
+pub fn blobRead(blob: Blob, buff: []u8, len: i32, offset: i32) !Str {
+    const buff_ptr: ?*anyopaque = @ptrCast(buff.ptr);
+    const rv = sqlite3.sqlite3_blob_read(blob, buff_ptr, len, offset);
+    return if (rv != 0) @"error"(rv)
+    else buff[0..@intCast(len)];
+}
+
+pub fn blobWrite(blob: Blob, buff: Str, len: i32, offset: i32) !void {
+    const buff_ptr: ?*anyopaque = @ptrCast(@constCast(buff.ptr));
+    const rv = sqlite3.sqlite3_blob_write(blob, buff_ptr, len, offset);
+    if (rv != 0) return @"error"(rv);
 }
 
 //##############################################################################
@@ -354,7 +392,7 @@ pub const Column = struct {
         return @intCast(sqlite3.sqlite3_column_count(self.stmt));
     }
 
-    pub fn name(self: Column, index: i32) []const u8 {
+    pub fn name(self: Column, index: i32) Str {
         const pos: c_int = @intCast(index);
         const col_name = sqlite3.sqlite3_column_name(self.stmt, pos);
         return mem.span(col_name);
@@ -394,7 +432,7 @@ pub const Column = struct {
     }
 
     /// - **WARNING:** Returned value must be freed by the caller
-    pub fn text(self: Column, index: i32) !?[]const u8 {
+    pub fn text(self: Column, index: i32) !?Str {
         const pos: c_int = @intCast(index);
         const result = sqlite3.sqlite3_column_text(self.stmt, pos);
 
@@ -407,7 +445,7 @@ pub const Column = struct {
     }
 
     /// - **WARNING:** Returned value must be freed by the caller
-    pub fn blob(self: Column, index: i32) !?[]const u8 {
+    pub fn blob(self: Column, index: i32) !?Str {
         const pos: c_int = @intCast(index);
         const result = sqlite3.sqlite3_column_blob(self.stmt, pos);
         const len = sqlite3.sqlite3_column_bytes(self.stmt, pos);
@@ -425,6 +463,7 @@ pub const Column = struct {
 /// # Converts Error Messages
 fn @"error"(code: c_int) Error {
     return switch (code) {
+        sqlite3.SQLITE_LOCKED => Error.Locked,
         sqlite3.SQLITE_ERROR => Error.UnableToExecuteQuery,
         sqlite3.SQLITE_BUSY => Error.ConnectionIsBusy,
         sqlite3.SQLITE_CANTOPEN => Error.UnableToOpen,
