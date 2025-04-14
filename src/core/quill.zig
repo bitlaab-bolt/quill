@@ -41,8 +41,8 @@ pub fn deinit() void {
 
 /// # Open or Creates a Database Instance
 /// - `filename` - When **null**, creates an in-memory database
-pub fn open(heap: Allocator, filename: ?[]const u8) !Self {
-    const flags = @intFromEnum(Flag.Create) | @intFromEnum(Flag.WriteWrite);
+pub fn open(heap: Allocator, filename: ?[:0]const u8) !Self {
+    const flags = @intFromEnum(Flag.Create) | @intFromEnum(Flag.ReadWrite);
 
     const db = if (filename) |file| try sqlite3.openV2(file, flags)
     else try sqlite3.openV2(":memory:", flags);

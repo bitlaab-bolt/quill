@@ -2,7 +2,7 @@
     .name = .quill,
     .version = "0.1.0",
     .fingerprint = 0x943b97bbcda5af24,
-    .minimum_zig_version = "0.15.0-dev.14+21620f3c6",
+    .minimum_zig_version = "0.15.0-dev.337+4e700fdf8",
     .dependencies = .{
         .jsonic = .{
             .url = "https://github.com/bitlaab-bolt/jsonic/archive/refs/tags/v0.3.1.zip",

@@ -13,6 +13,7 @@ const sqlite3 = @cImport({
 
 
 const Str = []const u8;
+const StrZ = [:0]const u8;
 
 const Error = error {
     Locked,
@@ -32,7 +33,7 @@ pub const Blob = ?*sqlite3.sqlite3_blob;
 pub const OpenFlag = enum(c_int) {
     Create = sqlite3.SQLITE_OPEN_CREATE,
     ReadOnly = sqlite3.SQLITE_OPEN_READONLY,
-    WriteWrite = sqlite3.SQLITE_OPEN_READWRITE,
+    ReadWrite = sqlite3.SQLITE_OPEN_READWRITE,
 };
 
 pub const Option = enum(i32) {
@@ -60,7 +61,7 @@ pub fn shutdown() !void {
     if (rv != 0) return @"error"(rv);
 }
 
-pub fn openV2(filename: Str, flags: i32) !Database {
+pub fn openV2(filename: StrZ, flags: i32) !Database {
     var db: Database = undefined;
     const rv = sqlite3.sqlite3_open_v2(filename.ptr, &db, flags, null);
     if (rv != 0) return @"error"(rv);
