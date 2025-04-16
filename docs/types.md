@@ -13,56 +13,56 @@ SQLite database engine primarily stores data into the database file as `Integer`
 
 ### Any()
 
-TypeCasts SQLite column data into a given data type when evaluated.
+TypeCasts SQLite column data into `T` when evaluated at runtime.
 
 **Example 01:** Converts `Text` data from a column into Zig's `struct`.
 
 ```zig
 const User = struct { name: []const u8, age: u8 };
-const Result = Any(User);
+const T = Any(User);
 ```
 
 **Example 02:** Converts `Text` data from a column into Zig's `enum`.
 
 ```zig
 const Gender = enum { Male, Female };
-const Result = Any(Gender);
+const T = Any(Gender);
 ```
 
 **Remarks:** In both of these cases `Text` data of the column must be stored as stringified JSON.
 
 ### CastInto()
 
-TypeCasts a given data type into SQLite column data when evaluated.
+TypeCasts `T` into SQLite column data when evaluated at runtime.
 
 **Example 01:** Converts `enum` data into a SQLite's `Integer` column.
 
 ```zig
 const Gender = enum { Male, Female };
-const Result = CastInto(.Int, Gender);
+const T = CastInto(.Int, Gender);
 ```
 
 **Example 02:** Converts `enum` data into a SQLite's `Text` column.
 
 ```zig
 const Gender = enum { Male, Female };
-const Result = CastInto(.Text, Gender);
+const T = CastInto(.Text, Gender);
 ```
 
 **Example 03:** Converts `struct` data into a SQLite's `Text` column.
 
 ```zig
 const User = struct { name: []const u8, age: u8 };
-const Result = CastInto(.Text, User);
+const T = CastInto(.Text, User);
 ```
 
 **Remarks:** As of now, `CastInto()` doesn't support `.Blob` conversion for user defined types.
 
 ## Record Schema
 
-A record contains multiple fields with their corresponding data types. Quill's record is just a synonym for SQLite **Row** and the fields are synonym for SQLite **Column**'s.
+A record contains multiple fields with their corresponding data types. Quill's record is just a synonym for SQLite **Row** and the fields are synonym for SQLite **Column**.
 
-To reduce development time, Quill automatically TypeCasts between Zig and SQLite data. Use following `DataType` format for the appropriate use cases.
+To reduce development time, Quill automatically TypeCasts between Zig's type and SQLite data. Use following `DataType` format for the appropriate use cases.
 
 ### Model
 
@@ -152,11 +152,11 @@ schema
 └── ...
 ```
 
-Create a `schema` directory in your project `src` directory. Within your schema directory create a file such as `user.zig` to represent a database container (Table). Now declare all of your Model, View, and Filter structure within this file.
+Create a `schema` directory in your project's `src` directory. Within your schema directory create file such as `user.zig` to represent a database container (Table). Now declare all of your Model, View, and Filter structure within this file.
 
-- Every file e.g., `user.zig` should contain a `Model` and `View` record structure for representing all the record fields in a container.
+- Every file (e.g., `user.zig`) should contain a `Model` and `View` record structure for representing all the record fields in a container.
 - Any sub-structure should start with a `Model` or `View` for code clarity.
-- Use `Filter` with informative name e.g., `FilterProfile` for code clarity.
+- Use `Filter` with informative name (e.g., `FilterProfile`) for code clarity.
 
 ```zig title="user.zig"
 pub const Model = struct {

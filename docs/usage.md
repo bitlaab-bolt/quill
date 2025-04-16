@@ -6,7 +6,7 @@ First import Quill on your zig file.
 const quill = @import("quill");
 ```
 
-Import common quill types to use through out the examples.
+Import common quill modules to use through out the examples.
 
 ```zig
 const Dt = quill.Types;
@@ -15,17 +15,17 @@ const Quill = quill.Quill;
 const Qb = quill.QueryBuilder;
 ```
 
-Initiate a General Propose Allocator (GPA) on main function.
+Initialize the General Propose Allocator (GPA) within the `main` function.
 
 ```zig
-var gpa_mem = std.heap.GeneralPurposeAllocator(.{}){};
-defer debug.assert(gpa_mem.deinit() == .ok);
+var gpa_mem = std.heap.DebugAllocator(.{}).init;
+defer std.debug.assert(gpa_mem.deinit() == .ok);
 const heap = gpa_mem.allocator();
 ```
 
 ## Initial Setup
 
-Let's initiate an on disk database with global configuration.
+Let's Initialize an on disk database with global configuration.
 
 ```zig
 try Quill.init(.Serialized);

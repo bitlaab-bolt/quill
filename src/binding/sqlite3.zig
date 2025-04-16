@@ -63,7 +63,7 @@ pub fn shutdown() !void {
 
 pub fn openV2(filename: StrZ, flags: i32) !Database {
     var db: Database = undefined;
-    const rv = sqlite3.sqlite3_open_v2(filename.ptr, &db, flags, null);
+    const rv = sqlite3.sqlite3_open_v2(filename, &db, flags, null);
     if (rv != 0) return @"error"(rv);
     return db;
 }
@@ -97,7 +97,7 @@ pub fn exec(heap: Allocator, db: Database, sql: Str) !ExecResult {
 //##############################################################################
 
 /// # Retrieves SQL Execution Results
-/// **WARNING:** You must call `destroy()`, when you are done with the result
+/// **WARNING:** You must call `ExecResult.destroy()` when done with the result.
 pub const ExecResult = struct {
     const Column = struct { name: Str, data: Str };
 
@@ -116,17 +116,19 @@ pub const ExecResult = struct {
         try self.result.append(columns);
     }
 
-    /// # Releases Allocated Memories
+    /// # Releases Allocated Resources
     pub fn destroy(self: *ExecResult) void {
+        const heap = self.heap;
+
         for (self.result.items) |item| {
             var i: usize = 0;
             while (i < item.len) : (i += 1) {
                 const column = item[i];
-                self.heap.free(column.name);
-                self.heap.free(column.data);
+                heap.free(column.name);
+                heap.free(column.data);
             }
 
-            self.heap.free(item);
+            heap.free(item);
         }
 
         self.result.deinit();
@@ -229,8 +231,8 @@ pub const Bind = struct {
         return @intCast(count);
     }
 
-    pub fn parameterIndex(self: *Bind, name: Str) !i32 {
-        const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name.ptr);
+    pub fn parameterIndex(self: *Bind, name: StrZ) !i32 {
+        const index = sqlite3.sqlite3_bind_parameter_index(self.stmt, name);
         if (index == 0) {
             log.warn("Missing Field Name `{s}`", .{name});
             return Error.BindParameterNotFound;
@@ -281,18 +283,17 @@ pub const Bind = struct {
     pub fn text(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-        const val: [*c]const u8 = @ptrCast(data);
         const bindText = sqlite3.sqlite3_bind_text;
 
         const static = sqlite3.SQLITE_STATIC;
-        const rv = bindText(self.stmt, pos, val, len, static);
+        const rv = bindText(self.stmt, pos, data.ptr, len, static);
         if (rv != 0) return @"error"(rv);
     }
 
     pub fn blob(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-        const val: ?*const anyopaque = @ptrCast(data.ptr);
+        const val = @as(?*const anyopaque, data);
         const bindBlob = sqlite3.sqlite3_bind_blob;
 
         const static = sqlite3.SQLITE_STATIC;
@@ -339,15 +340,17 @@ pub const BlobOption = enum { Read, ReadWrite };
 
 pub fn blobOpen(
     db: Database,
-    table: Str,
-    column: Str,
+    table: StrZ,
+    column: StrZ,
     rowid: i64,
     opt: BlobOption
 ) !Blob {
-    const flag: c_int = @intFromEnum(opt);
-
     var blob: Blob  = null;
-    const rv = sqlite3.sqlite3_blob_open(db, "main", table.ptr, column.ptr, @intCast(rowid), flag, &blob);
+    const flag: c_int = @intFromEnum(opt);
+    const rv = sqlite3.sqlite3_blob_open(
+        db, "main", table, column, @intCast(rowid), flag, &blob
+    );
+
     return if (rv != 0) @"error"(rv) else blob;
 }
 
@@ -361,14 +364,14 @@ pub fn blobBytes(blob: Blob) i32 {
 }
 
 pub fn blobRead(blob: Blob, buff: []u8, len: i32, offset: i32) !Str {
-    const buff_ptr: ?*anyopaque = @ptrCast(buff.ptr);
+    const buff_ptr = @as(?*anyopaque, buff);
     const rv = sqlite3.sqlite3_blob_read(blob, buff_ptr, len, offset);
     return if (rv != 0) @"error"(rv)
     else buff[0..@intCast(len)];
 }
 
 pub fn blobWrite(blob: Blob, buff: Str, len: i32, offset: i32) !void {
-    const buff_ptr: ?*anyopaque = @ptrCast(@constCast(buff.ptr));
+    const buff_ptr = @as(?*const anyopaque, buff);
     const rv = sqlite3.sqlite3_blob_write(blob, buff_ptr, len, offset);
     if (rv != 0) return @"error"(rv);
 }

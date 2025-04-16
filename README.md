@@ -1,6 +1,6 @@
 # quill
 
-**High-level SQLite wrapper written in Zig**
+**High-level SQLite Wrapper**
 
 Quill is an opinionated SQLite wrapper, focuses on performance and code efficiency. Quill provides a compile-time statement builder along with many builtin functionalities and a high-level **CRUD** interface for database activity.
 

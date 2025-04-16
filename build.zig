@@ -4,9 +4,7 @@ const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{
-        .preferred_optimize_mode = .ReleaseSafe
-    });
+    const optimize = b.standardOptimizeOption(.{});
 
     // Exposing as a dependency for other projects
     const pkg = b.addModule("quill", .{
@@ -18,13 +16,14 @@ pub fn build(b: *std.Build) void {
     pkg.addIncludePath(b.path("libs/include"));
     pkg.addCSourceFile(.{.file = b.path("libs/src/sqlite3.c"), .flags = &.{}});
 
-    // Making executable for this project
-    const exe = b.addExecutable(.{
-        .name = "quill",
+    const main = b.addModule("main", .{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
+
+    const app = "quill";
+    const exe = b.addExecutable(.{.name = app, .root_module = main});
 
     // Adding cross-platform dependency
     switch (target.query.os_tag orelse builtin.os.tag) {

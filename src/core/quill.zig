@@ -353,6 +353,9 @@ pub const BlobStream = struct {
     /// **Remarks:** Only modify the contents of the Blob. The overall Blob size
     /// can't be increased or decreased. Also, `open()` must be called with opt
     /// `.ReadWrite` otherwise error **Locked** will be returned.
+    ///
+    /// - `buff` - Buffer data to be overwritten on the record.
+    /// - `offset` - Offset position to start writing the data.
     pub fn write(self: *BlobStream, buff: []const u8, offset: usize) !void {
         debug.assert(offset < self.length);
         const available = self.length - offset;

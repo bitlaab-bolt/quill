@@ -1,7 +1,7 @@
 //! # UUID Version 7
-//! **REMARKS:** UUID v7 is great for databases (ScyllaDB, SQLite, etc.),
-//! it is optimized for performance, scalability, and ordering in databases,
-//! making it superior to **UUID v4** and other versions for primary keys.
+//! **REMARKS:** UUID v7 is great for databases (ScyllaDB, SQLite, etc.).
+//! It is optimized for performance, scalability, and ordering in databases.
+//! Making it superior to **UUID v4** and other versions for primary keys.
 //!
 //! - Compatible with Standard UUID Formats
 //! - Ensuring uniqueness across multiple nodes

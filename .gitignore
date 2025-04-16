@@ -1,5 +1,7 @@
-site/
-zig-out/
-.zig-cache/
-hello.db
 .DS_Store
+**/.DS_Store
+.zig-cache/
+zig-out/
+site/
+
+hello.db

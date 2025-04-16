@@ -2,7 +2,7 @@
 
 Quill's statement builder allows us to build SQL statement at Compile-Time. Thus, well optimized for STMT caching and evaluates only once at build time.
 
-For more details see - [API Reference](/reference).
+For more details on this, see - [API Reference](/reference).
 
 ## Prerequisites
 
@@ -96,7 +96,7 @@ std.debug.print("{s}\n", .{sql});
 
 Checkout the [source](/zig-docs/index.html#src/root/core/builder.zig) for more details.
 
-**Remarks:** Containers with implicit **RowId** will automatically generate a primary key field named `rowid`. Thus, make sure to add this field in your View structure if `rowid` is required. Only create such container when BlobStream is required.
+**Remarks:** Containers with implicit **RowId** will automatically generate a primary key field named `rowid`. Thus, make sure to add this field in your View structure if `rowid` is required. Only create such container when you are intending to use this for **BlobStream**.
 
 ## Record
 

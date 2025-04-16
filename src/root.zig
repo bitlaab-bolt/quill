@@ -1,4 +1,4 @@
-//! # SQLite Library Binding
+//! # High-level SQLite Wrapper
 //! - See documentation at - https://bitlaabquill.web.app/
 
 pub const Uuid = @import("./core/uuid.zig");

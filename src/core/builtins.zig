@@ -11,7 +11,7 @@ const Allocator = mem.Allocator;
 const quill = @import("./quill.zig");
 const builder = @import("./builder.zig");
 
-
+const Str = []const u8;
 const Error = error { FailedIntegrityChecks };
 
 /// # Contains Index Related Functionalities
@@ -21,7 +21,7 @@ pub const Index = struct {
 
     const Info = struct {
         sn: u8,
-        name: []const u8,
+        name: Str,
         unique: bool,
         origin: Origin,
         partial: bool
@@ -38,9 +38,9 @@ pub const Index = struct {
     /// - `mode` - When **Unique**, prevents duplicate field value entries
     pub fn create(
         db: *quill,
-        comptime idx: []const u8,
-        comptime in: []const u8,
-        comptime @"for": []const u8,
+        comptime idx: Str,
+        comptime in: Str,
+        comptime @"for": Str,
         mode: Mode,
     ) !void {
         switch (mode) {
@@ -68,7 +68,7 @@ pub const Index = struct {
     /// # Removes an Existing Index
     /// **Remarks:** You should only remove user defined indexes
     /// - `idx` - Index name e.g., `idx_unique_email`
-    pub fn remove(db: *quill, comptime idx: []const u8) !void {
+    pub fn remove(db: *quill, comptime idx: Str) !void {
         var result = try db.exec("DROP INDEX " ++ idx ++ ";");
         defer result.destroy();
 
@@ -78,11 +78,7 @@ pub const Index = struct {
     /// # Returns All Associated Indexes in a Container
     /// **WARNING:** Returned value must be freed with `freeList()`
     /// - `from` - Container name e.g., `users`, `accounts` etc.
-    pub fn getList(
-        heap: Allocator,
-        db: *quill,
-        comptime from: []const u8
-    ) ![]Info {
+    pub fn getList(heap: Allocator, db: *quill, comptime from: Str) ![]Info {
         var result = try db.exec("PRAGMA index_list(" ++ from ++ ");");
         defer result.destroy();
 
@@ -129,16 +125,12 @@ pub const Index = struct {
 pub const Container = struct {
     const Action = enum { Retain, Purge };
     const FieldType = enum { INTEGER, REAL, TEXT, BLOB };
-    const FieldOption = union(enum) { Null: void, NotNull: []const u8 };
+    const FieldOption = union(enum) { Null: void, NotNull: Str };
 
     /// # Renames a Container
     /// - `from` - Current container name e.g., `users`, `accounts` etc.
     /// - `to` - New container name e.g., `clients`, `customers` etc.
-    pub fn rename(
-        db: *quill,
-        comptime from: []const u8,
-        comptime to: []const u8
-    ) !void {
+    pub fn rename(db: *quill, comptime from: Str, comptime to: Str) !void {
         const fmt_str = "ALTER TABLE {s} RENAME TO {s};";
         const sql = fmt.comptimePrint(fmt_str, .{from, to});
         var result = try db.exec(sql);
@@ -150,7 +142,7 @@ pub const Container = struct {
     /// # Removes All Records from a Container
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     /// - `act` - When **Purge**, vacuums unused space in the database file
-    pub fn reset(db: *quill, comptime from: []const u8, act: Action) !void {
+    pub fn reset(db: *quill, comptime from: Str, act: Action) !void {
         switch (act) {
             .Retain => {
                 var result = try db.exec("DELETE FROM " ++ from ++ ";");
@@ -170,7 +162,7 @@ pub const Container = struct {
     /// # Deletes an Entire Container
     /// - **CAUTION:** Once deleted, data will be lost permanently!
     /// - `name` - Container name e.g., `users`, `accounts` etc.
-    pub fn delete(db: *quill, comptime name: []const u8, act: Action) !void {
+    pub fn delete(db: *quill, comptime name: Str, act: Action) !void {
         switch (act) {
             .Retain => {
                 const sql = "DROP TABLE IF EXISTS " ++ name ++ ";";
@@ -198,8 +190,8 @@ pub const Container = struct {
     /// **Remarks:** For default `TEXT` data use e.g., `.{.NotNull = "'John'"}`
     pub fn fieldAdd(
         db: *quill,
-        comptime to: []const u8,
-        comptime name: []const u8,
+        comptime to: Str,
+        comptime name: Str,
         comptime @"type": FieldType,
         comptime opt: FieldOption
     ) !void {
@@ -226,9 +218,9 @@ pub const Container = struct {
     /// - `to` - New field name e.g., `fullname`, `phone_number` etc.
     pub fn fieldRename(
         db: *quill,
-        comptime name: []const u8,
-        comptime from: []const u8,
-        comptime to: []const u8
+        comptime name: Str,
+        comptime from: Str,
+        comptime to: Str
     ) !void {
         const fmt_str = "ALTER TABLE {s} RENAME COLUMN {s} TO {s};";
         const sql = fmt.comptimePrint(fmt_str, .{name, from, to});
@@ -238,25 +230,26 @@ pub const Container = struct {
         debug.assert(result.count() == 0);
     }
 
-    // TODO: when builder is competed
-    pub fn fieldRemove(
-        db: *quill,
-        comptime T: type,
-        comptime from: []const u8
-    ) !void {
+    /// # Removes a Field from the Given Container
+    /// - `T` - New Record Model structure excluding old fields.
+    /// - `from` - Container name e.g., `users`, `accounts` etc.
+    pub fn fieldRemove(db: *quill, comptime T: type, comptime from: Str) !void {
         if (@typeInfo(T) != .@"struct") {
             const err_str = "quill: Type of `{s}` Must be a Model Structure";
             @compileError(fmt.comptimePrint(err_str, .{@typeName(T)}));
         }
 
-        if (!@hasField(T, "uuid")) {
-            const err_str = "quill: Model Structure `{s}` has no `uuid` Field";
-            @compileError(fmt.comptimePrint(err_str, .{@typeName(T)}));
-        }
+        const new_table = blk: {
+            const table = from ++ "_new";
 
-        const new_table = comptime builder.Container.create(T, from ++ "_new");
+            if (@hasField(T, "uuid")) {
+                break :blk comptime builder.Container.create(T, table, .Uuid);
+            } else {
+                break :blk comptime builder.Container.create(T, table, .RowId);
+            }
+        };
 
-        comptime var fields: []const u8 = "";
+        comptime var fields: Str = "";
         inline for (@typeInfo(T).@"struct".fields) |f| {
            fields = fields ++ fmt.comptimePrint("{s}, ", .{f.name});
         }
