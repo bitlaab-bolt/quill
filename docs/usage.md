@@ -1,12 +1,12 @@
 # How to use
 
-First import Quill on your zig file.
+First, import Quill on your Zig source file.
 
 ```zig
 const quill = @import("quill");
 ```
 
-Import common quill modules to use through out the examples.
+Now, import common quill modules to use through out the examples.
 
 ```zig
 const Dt = quill.Types;
