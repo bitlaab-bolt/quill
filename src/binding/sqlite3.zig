@@ -293,7 +293,7 @@ pub const Bind = struct {
     pub fn blob(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
-        const val = @as(?*const anyopaque, data);
+        const val = @as(?*const anyopaque, data.ptr);
         const bindBlob = sqlite3.sqlite3_bind_blob;
 
         const static = sqlite3.SQLITE_STATIC;
@@ -371,7 +371,7 @@ pub fn blobRead(blob: Blob, buff: []u8, len: i32, offset: i32) !Str {
 }
 
 pub fn blobWrite(blob: Blob, buff: Str, len: i32, offset: i32) !void {
-    const buff_ptr = @as(?*const anyopaque, buff);
+    const buff_ptr = @as(?*const anyopaque, buff.ptr);
     const rv = sqlite3.sqlite3_blob_write(blob, buff_ptr, len, offset);
     if (rv != 0) return @"error"(rv);
 }
