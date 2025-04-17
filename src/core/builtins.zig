@@ -276,14 +276,40 @@ pub const Container = struct {
 pub const Pragma = struct {
     const VacuumMode = enum { NONE, INCREMENTAL, FULL };
 
+    const JournalMode = enum {
+        /// Default mode
+        DELETE,
+        /// Truncates journal
+        TRUNCATE,
+        /// Clears the file, but keeps it.
+        PERSIST,
+        /// In-memory only, volatile.
+        MEMORY,
+        /// Best for concurrent access
+        WAL,
+        /// No journals, risky.
+        OFF
+    };
+
+    const SyncMode = enum(u8) {
+        /// No disk sync at all. Changes can be lost on crash.
+        OFF = 0,
+        /// Syncs less often. Safe unless OS crashes or power is lost mid-write.
+        NORMAL = 1,
+        /// Syncs at key steps. Full durability.
+        FULL = 2,
+        /// More syncs than FULL â€” useful for testing, not needed normally.
+        EXTRA = 3
+    };
+
     /// # Returns Current Schema Version
     /// **Remarks:** Use this exclusively for database migration
     pub fn version(db: *quill) !u16 {
         var result = try db.exec("PRAGMA user_version;");
         defer result.destroy();
 
-        const ver = result.next().?[0];
-        return try fmt.parseInt(u16, ver.data, 10);
+        const res = result.next().?[0];
+        return try fmt.parseInt(u16, res.data, 10);
     }
 
     /// # Updates Current Schema Version
@@ -297,10 +323,111 @@ pub const Pragma = struct {
         debug.assert(result.count() == 0);
     }
 
-    /// # Sets Database Page Cache Size Limits
-    /// - `size` - Cache size in kilobytes
-    pub fn setCache(db: *quill, comptime size: u32) !void {
-        const sql = fmt.comptimePrint("PRAGMA cache_size = {d};", .{size});
+    /// # Returns Database Page Cache
+    /// - Positive value means pages and negative value means size in kilobytes.
+    pub fn cache(db: *quill) !i32 {
+        var result = try db.exec("PRAGMA cache_size;");
+        defer result.destroy();
+
+        const res = result.next().?[0];
+        return try fmt.parseInt(i32, res.data, 10);
+    }
+
+    /// # Sets Database Page Cache
+    /// - `value` - Sets the page cache as the following:
+    ///     - Sets the number of pages when positive.
+    ///     - Sets the size in kilobytes when negative.
+    pub fn setCache(db: *quill, comptime value: i32) !void {
+        const sql = fmt.comptimePrint("PRAGMA cache_size = {d};", .{value});
+        var result = try db.exec(sql);
+        defer result.destroy();
+
+        debug.assert(result.count() == 0);
+    }
+
+    /// # Return Total Number of Pages
+    pub fn pageCount(db: *quill) !u32 {
+        var result = try db.exec("PRAGMA page_count;");
+        defer result.destroy();
+
+        const res = result.next().?[0];
+        return try fmt.parseInt(u32, res.data, 10);
+    }
+
+    /// # Returns Page Size in Bytes
+    pub fn pageSize(db: *quill) !u16 {
+        var result = try db.exec("PRAGMA page_size;");
+        defer result.destroy();
+
+        const res = result.next().?[0];
+        return try fmt.parseInt(u16, res.data, 10);
+    }
+
+    /// # Sets Page Size in Bytes
+    /// - `size` - Must be the power of 2 (e.g., `4096`, `8192`, etc.).
+    pub fn setPageSize(db: *quill, comptime size: u16) !void {
+        const sql = fmt.comptimePrint("PRAGMA page_size = {d};", .{size});
+        var result = try db.exec(sql);
+        defer result.destroy();
+
+        debug.assert(result.count() == 0);
+    }
+
+    /// # Optimizes the Database
+    /// **Remarks:** Run this when the database connection is first opened.
+    /// And perhaps once per day or once per hour for long-lived databases.
+    pub fn optimize(db: *quill) !void {
+        var result = try db.exec("PRAGMA optimize;");
+        defer result.destroy();
+
+        debug.assert(result.count() == 0);
+    }
+
+    /// # Returns Current Journal Mode
+    pub fn journal(db: *quill) !JournalMode {
+        var result = try db.exec("PRAGMA journal_mode;");
+        defer result.destroy();
+
+        const res = result.next().?[0];
+
+        return if (mem.eql(u8, res.data, "delete")) .DELETE
+        else if (mem.eql(u8, res.data, "truncate")) .TRUNCATE
+        else if (mem.eql(u8, res.data, "persist")) .PERSIST
+        else if (mem.eql(u8, res.data, "memory")) .MEMORY
+        else if (mem.eql(u8, res.data, "wal")) .WAL
+        else if (mem.eql(u8, res.data, "off")) .OFF
+        else unreachable;
+    }
+
+    /// # Sets New Journal Mode
+    pub fn setJournal(db: *quill, comptime mode: JournalMode) !void {
+        const tag = @tagName(mode);
+        const sql = fmt.comptimePrint("PRAGMA journal_mode = {s};", .{tag});
+        var result = try db.exec(sql);
+        defer result.destroy();
+
+        debug.assert(result.count() == 1);
+    }
+
+    /// # Returns Current Synchronous Mode
+    pub fn synchronous(db: *quill) !SyncMode {
+        var result = try db.exec("PRAGMA synchronous;");
+        defer result.destroy();
+
+        const res = result.next().?[0];
+        const val = try fmt.parseInt(u8, res.data, 10);
+        return @enumFromInt(val);
+    }
+
+    /// # Sets New Synchronous Mode
+    /// Synchronization is used to decide when to wait for disk flushes.
+    /// **Especially During:**
+    /// - Writing to the journal
+    /// - Committing transactions
+    /// - Writing to the database
+    pub fn setSynchronous(db: *quill, comptime mode: SyncMode) !void {
+        const val = @intFromEnum(mode);
+        const sql = fmt.comptimePrint("PRAGMA synchronous = {d};", .{val});
         var result = try db.exec(sql);
         defer result.destroy();
 
@@ -312,8 +439,8 @@ pub const Pragma = struct {
         var result = try db.exec("PRAGMA integrity_check;");
         defer result.destroy();
 
-        const stat = result.next().?[0];
-        if (!mem.eql(u8, stat.data, "ok")) return Error.FailedIntegrityChecks;
+        const res = result.next().?[0];
+        if (!mem.eql(u8, res.data, "ok")) return Error.FailedIntegrityChecks;
     }
 
     /// # Returns the Current Vacuum Mode
@@ -321,8 +448,8 @@ pub const Pragma = struct {
         var result = try db.exec("PRAGMA auto_vacuum;");
         defer result.destroy();
 
-        const vacuum = result.next().?[0];
-        const mode = try fmt.parseInt(usize, vacuum.data, 10);
+        const res = result.next().?[0];
+        const mode = try fmt.parseInt(usize, res.data, 10);
         return switch (mode) {
             0 => .NONE,
             1 => .FULL,
