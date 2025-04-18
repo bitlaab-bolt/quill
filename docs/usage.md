@@ -102,7 +102,7 @@ pub const ModelProfile = struct {
 Following example will create a new container based on a given record `Model` structure.
 
 ```zig
-const sql = comptime Qb.Container.create(Model, "users");
+const sql = comptime Qb.Container.create(Model, "users", .Uuid);
 var result = try db.exec(sql);
 result.destroy();
 ```

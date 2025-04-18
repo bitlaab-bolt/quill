@@ -459,7 +459,7 @@ pub const Pragma = struct {
     }
 
     /// # Sets the Vacuum Mode
-    /// **Remarks:** Call `reclaimUnusedSpace()` for the change to take effect
+    /// **Remarks:** Call `claimUnusedSpace()` for the change to take effect.
     pub fn setReclaimMode(db: *quill, comptime mode: VacuumMode) !void {
         const mode_name = @tagName(mode);
         var result = try db.exec("PRAGMA auto_vacuum = " ++ mode_name ++ ";");
