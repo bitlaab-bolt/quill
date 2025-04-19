@@ -406,6 +406,23 @@ defer crud.destroy();
 try crud.remove(filter, resultCallback);
 ```
 
+## ACID Session
+
+ACID Session provides a SQLite transaction, to group one or more SQL statements into a single unit of work that is executed atomically — meaning all or nothing.
+
+```zig
+try Quill.AcidSession.start(&db, null);
+errdefer Quill.AcidSession.end(&db, .Rollback, null) catch |err| {
+    std.debug.print("{s}\n", .{@errorName(err)});
+};
+
+// Your multiple database operations here..
+
+try Quill.AcidSession.end(&db, .Commit, null);
+```
+
+**Remarks:** `&db` argument is your database (`*Quill`) instance.
+
 ## Blob Stream
 
 Provides a stream interface for progressive read, write on large Blob data.

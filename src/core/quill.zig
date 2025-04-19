@@ -278,14 +278,15 @@ pub const AcidSession = struct {
     const Callback = *const fn(result: ExecResult) void;
 
     /// # Starts ACID Session for Multiple Transaction
+    /// - `self` - A database instance (`*Quill`)
     /// - `callback` - Captures execution result when not **NULL**
     pub fn start(self: *Self, callback: ?Callback) !void {
         var result = try self.exec("BEGIN TRANSACTION;");
-        if (callback) |cb| cb(result)
-        else result.destroy();
+        if (callback) |cb| cb(result) else result.destroy();
     }
 
     /// # Ends ACID Session for Multiple Transaction
+    /// - `self` - A database instance (`*Quill`)
     /// - `callback` - Captures execution result when not **NULL**
     pub fn end(self: *Self, act: Action, callback: ?Callback) !void {
         var result = switch (act) {
@@ -293,8 +294,7 @@ pub const AcidSession = struct {
             .Rollback => try self.exec("ROLLBACK;")
         };
 
-        if (callback) |cb| cb(result)
-        else result.destroy();
+        if (callback) |cb| cb(result) else result.destroy();
     }
 };
 
