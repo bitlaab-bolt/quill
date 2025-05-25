@@ -34,6 +34,7 @@ pub const OpenFlag = enum(c_int) {
     Create = sqlite3.SQLITE_OPEN_CREATE,
     ReadOnly = sqlite3.SQLITE_OPEN_READONLY,
     ReadWrite = sqlite3.SQLITE_OPEN_READWRITE,
+    FileUri = sqlite3.SQLITE_OPEN_URI
 };
 
 pub const Option = enum(i32) {

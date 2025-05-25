@@ -39,16 +39,22 @@ pub fn deinit() void {
     sqlite3.shutdown() catch |err| { log.err("{s}", .{@errorName(err)}); };
 }
 
-const Permission = enum { ReadOnly, All };
+const Permission = enum { ReadOnly, ReadOnlyWithUri, All };
 
 /// # Open or Creates a Database Instance
 /// - `filename` - When **null**, creates an in-memory database
 /// - `p` - Permission for the given database file:
 ///     - `ReadOnly` - Expects the file to be available on the file system
+///     - `ReadOnlyWithUri` - Same as `ReadOnly` with added Uri at the end
+///         - Example on mac: `file:/users/john/demo-file.db?immutable=1`
+///         - Example on windows: `file:C:/john/demo-file.db?immutable=1`
 ///     - `All` - Create the file if not exists with read write permission
 pub fn open(heap: Allocator, filename: ?[:0]const u8, p: Permission) !Self {
     const flags = switch (p) {
-        .ReadOnly => @intFromEnum(Flag.ReadWrite),
+        .ReadOnly => @intFromEnum(Flag.ReadOnly),
+        .ReadOnlyWithUri =>
+            @intFromEnum(Flag.ReadOnly) | @intFromEnum(Flag.FileUri)
+        ,
         .All => @intFromEnum(Flag.Create) | @intFromEnum(Flag.ReadWrite)
     };
 
