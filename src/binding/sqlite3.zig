@@ -65,7 +65,10 @@ pub fn shutdown() !void {
 pub fn openV2(filename: StrZ, flags: i32) !Database {
     var db: Database = undefined;
     const rv = sqlite3.sqlite3_open_v2(filename, &db, flags, null);
-    if (rv != 0) return @"error"(rv);
+    if (rv != 0) {
+        log.err("{s}", .{errMsg(db)});
+        return @"error"(rv);
+    }
     return db;
 }
 
