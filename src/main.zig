@@ -16,7 +16,7 @@ pub fn main() !void {
     try Quill.init(.Serialized);
     defer Quill.deinit();
 
-    var db = try Quill.open(heap, "hello.db");
+    var db = try Quill.open(heap, "hello.db", .All);
     defer db.close();
 
     const x = try builtins.Pragma.reclaimStatus(&db);
