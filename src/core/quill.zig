@@ -45,7 +45,7 @@ const Permission = enum { ReadOnly, FileUri, All };
 /// - `filename` - When **null**, creates an in-memory database
 /// - `p` - Permission for the given database file:
 ///     - `ReadOnly` - Expects the file to be available on the file system
-///     - `ReadOnlyWithUri` - Same as `ReadOnly` with added Uri at the end
+///     - `FileUri` - Same as `ReadOnly` with additional URIs at the end
 ///         - Example on mac: `file:/users/john/demo-file.db?immutable=1`
 ///         - Example on windows: `file:C:/john/demo-file.db?immutable=1`
 ///     - `All` - Create the file if not exists with read write permission
