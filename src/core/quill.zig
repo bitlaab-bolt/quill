@@ -39,7 +39,7 @@ pub fn deinit() void {
     sqlite3.shutdown() catch |err| { log.err("{s}", .{@errorName(err)}); };
 }
 
-const Permission = enum { ReadOnly, ReadOnlyWithUri, All };
+const Permission = enum { ReadOnly, FileUri, All };
 
 /// # Open or Creates a Database Instance
 /// - `filename` - When **null**, creates an in-memory database
@@ -52,9 +52,7 @@ const Permission = enum { ReadOnly, ReadOnlyWithUri, All };
 pub fn open(heap: Allocator, filename: ?[:0]const u8, p: Permission) !Self {
     const flags = switch (p) {
         .ReadOnly => @intFromEnum(Flag.ReadOnly),
-        .ReadOnlyWithUri =>
-            @intFromEnum(Flag.ReadOnly) | @intFromEnum(Flag.FileUri)
-        ,
+        .FileUri => @intFromEnum(Flag.ReadOnly) | @intFromEnum(Flag.FileUri),
         .All => @intFromEnum(Flag.Create) | @intFromEnum(Flag.ReadWrite)
     };
 
