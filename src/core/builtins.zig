@@ -45,8 +45,8 @@ pub const Index = struct {
     ) !void {
         switch (mode) {
             .Default => {
-                // e.g., CREATE INDEX idx_name ON users(first_name);
-                const fmt_str = "CREATE INDEX {s} ON {s}(\"{s}\");";
+                // e.g., CREATE INDEX IF NOT EXISTS idx_name ON users("first_name");
+                const fmt_str = "CREATE INDEX IF NOT EXISTS {s} ON {s}(\"{s}\");";
                 const sql = fmt.comptimePrint(fmt_str, .{idx, in, @"for"});
                 var result = try db.exec(sql);
                 defer result.destroy();
@@ -54,8 +54,8 @@ pub const Index = struct {
                 debug.assert(result.count() == 0);
             },
             .Unique => {
-                // e.g., CREATE UNIQUE INDEX idx_name ON users(first_name);
-                const fmt_str = "CREATE UNIQUE INDEX {s} ON {s}(\"{s}\");";
+                // e.g., CREATE UNIQUE INDEX IF NOT EXISTS idx_name ON users(first_name);
+                const fmt_str = "CREATE UNIQUE INDEX IF NOT EXISTS {s} ON {s}(\"{s}\");";
                 const sql = fmt.comptimePrint(fmt_str, .{idx, in, @"for"});
                 var result = try db.exec(sql);
                 defer result.destroy();
