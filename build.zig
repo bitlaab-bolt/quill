@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
     // Adding cross-platform dependency
     switch (target.query.os_tag orelse builtin.os.tag) {
         .macos => {},
-        .windows => exe.linkLibC(),
+        .windows, .linux => exe.linkLibC(),
         else => @panic("Codebase is not tailored for this platform!")
     }
 
