@@ -328,8 +328,8 @@ pub const BlobStream = struct {
     /// **Remarks:** Given container must have implicit `rowid` as Primary Key
     pub fn open(
         db: *Self,
-        container: []const u8,
-        field: []const u8,
+        container: [:0]const u8,
+        field: [:0]const u8,
         rowid: i64,
         opt: BlobOption,
     ) !BlobStream {
