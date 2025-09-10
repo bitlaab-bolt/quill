@@ -63,6 +63,12 @@ pub const DataType = struct {
                     else => @compileError(ctPrint(err_str, .{@typeName(T)}))
                 }
             },
+            .BlobLen => {
+                switch (@typeInfo(T)) {
+                    .@"enum" => return struct { blob_len: T },
+                    else => @compileError(ctPrint(err_str, .{@typeName(T)}))
+                }
+            },
             .Text => {
                 switch (@typeInfo(T)) {
                     .@"enum", .@"struct" => return struct { text: T },
@@ -224,6 +230,8 @@ fn typeCast(
                         try bind.int(i, @intFromEnum(child));
                     } else if (@hasField(T, "text")) {
                         try bind.text(i, @tagName(child));
+                    } else if (@hasField(T, "blob_len")) {
+                        try bind.blobProvision(i, value);
                     } else {
                         @compileError(ctPrint(err_str1, .{@typeName(T)}));
                     }

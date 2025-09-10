@@ -304,6 +304,15 @@ pub const Bind = struct {
         const rv = bindBlob(self.stmt, pos, val, len, static);
         if (rv != 0) return @"error"(rv);
     }
+
+    pub fn blobProvision(self: *Bind, index: i32, data_len: i32) !void {
+        const pos: c_int = @intCast(index);
+        const len: c_int = @intCast(data_len);
+        const bindZeroBlob = sqlite3.sqlite3_bind_zeroblob;
+
+        const rv = bindZeroBlob(self.stmt, pos, len);
+        if (rv != 0) return @"error"(rv);
+    }
 };
 
 pub const Result = enum { Done, Row };
