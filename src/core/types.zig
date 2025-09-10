@@ -50,7 +50,7 @@ pub const DataType = struct {
         }
     }
 
-    const CastKind = enum { Int, Text, Blob };
+    const CastKind = enum { Int, Text, Blob, BlobLen };
 
     /// # TypeCasts into SQLite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data binding
@@ -65,7 +65,7 @@ pub const DataType = struct {
             },
             .BlobLen => {
                 switch (@typeInfo(T)) {
-                    .@"enum" => return struct { blob_len: T },
+                    .int => return struct { blob_len: T },
                     else => @compileError(ctPrint(err_str, .{@typeName(T)}))
                 }
             },
@@ -225,13 +225,18 @@ fn typeCast(
             const info = @typeInfo(@TypeOf(child));
 
             switch (info) {
+                .int => {
+                    if (@hasField(T, "blob_len")) {
+                        try bind.blobProvision(i, @intCast(value.blob_len));
+                    } else {
+                        @compileError(ctPrint(err_str1, .{@typeName(T)}));
+                    }
+                },
                 .@"enum" => {
                     if (@hasField(T, "int")) {
                         try bind.int(i, @intFromEnum(child));
                     } else if (@hasField(T, "text")) {
                         try bind.text(i, @tagName(child));
-                    } else if (@hasField(T, "blob_len")) {
-                        try bind.blobProvision(i, value);
                     } else {
                         @compileError(ctPrint(err_str1, .{@typeName(T)}));
                     }
