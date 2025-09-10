@@ -377,7 +377,7 @@ pub fn blobBytes(blob: Blob) i32 {
 }
 
 pub fn blobRead(blob: Blob, buff: []u8, len: i32, offset: i32) !Str {
-    const buff_ptr = @as(?*anyopaque, buff);
+    const buff_ptr = @as(?*anyopaque, buff.ptr);
     const rv = sqlite3.sqlite3_blob_read(blob, buff_ptr, len, offset);
     return if (rv != 0) @"error"(rv)
     else buff[0..@intCast(len)];
