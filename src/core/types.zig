@@ -290,7 +290,6 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
 
     var dest: T = undefined;
     const fields = info.@"struct".fields;
-    if (!matchRecord(col, fields)) return Error.MismatchedFields;
 
     for (0..@as(usize, @intCast(col.count()))) |index| {
         const i: i32 = @intCast(index);
@@ -313,21 +312,6 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     }
 
     return dest;
-}
-
-/// # Cross Checks Column and Structure Fields
-fn matchRecord(col: *Column, fields: []const Type.StructField) bool {
-    if (fields.len != col.count()) return false;
-
-    var count: i32 = 0;
-    for (0..@as(usize, @intCast(col.count()))) |index| {
-        const i: i32 = @intCast(index);
-        inline for (fields) |field| {
-            if (mem.eql(u8, col.name(i), field.name[0..])) count += 1;
-        }
-    }
-
-    return if (count == col.count()) true else false;
 }
 
 /// # Converts Scaler and Complex (user defined) Types

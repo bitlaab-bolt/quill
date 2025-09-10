@@ -16,7 +16,7 @@ const ctPrint = fmt.comptimePrint;
 
 /// # SQLite Database Table Statement Builder
 pub const Container = struct {
-    const PrimaryKey = enum { RowId, Uuid };
+    const PrimaryKey = enum { RowId, Uuid, UuidStr };
 
     /// # Generates `CREATE TABLE` SQL Statement
     /// - `T` - Record Model structure
@@ -55,7 +55,7 @@ pub const Container = struct {
 
         const sql_head = "CREATE TABLE IF NOT EXISTS " ++ name ++ " (\n";
         const sql_tail = switch (pk) {
-            .RowId => "\n) STRICT;", .Uuid => "\n) STRICT, WITHOUT ROWID;"
+            .RowId => "\n) STRICT;", else => "\n) STRICT, WITHOUT ROWID;"
         };
         const data = fields[0..fields.len - 2];
 
@@ -112,7 +112,8 @@ pub const Container = struct {
                         if (!opt) {
                             const fmt_str = switch (pk) {
                                 .RowId => "\t{s} BLOB UNIQUE,\n",
-                                .Uuid => "\t{s} BLOB PRIMARY KEY,\n"
+                                .Uuid => "\t{s} BLOB PRIMARY KEY,\n",
+                                .UuidStr => "\t{s} TEXT PRIMARY KEY,\n",
                             };
                             return ctPrint(fmt_str, .{field});
                         } else {
