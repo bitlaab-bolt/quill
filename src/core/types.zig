@@ -244,7 +244,7 @@ fn typeCast(
                 .@"struct" => {
                     if (@hasField(T, "text")) {
                         const out = try Json.stringify(heap, child);
-                        try list.append(out);
+                        try list.append(heap, out);
                         try bind.text(i, out);
                     } else {
                         @compileError(ctPrint(err_str1, .{@typeName(T)}));
@@ -257,7 +257,7 @@ fn typeCast(
                         if (p.child == u8) try bind.text(i, child)
                         else {
                             const out = try Json.stringify(heap, child);
-                            try list.append(out);
+                            try list.append(heap, out);
                             try bind.text(i, out);
                         }
                     } else if (@hasField(T, "blob")) {
