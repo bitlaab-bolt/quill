@@ -23,6 +23,10 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
+## [v0.6.0] - 2025-09-13
+
+Minor code changes required for Zig v0.15.1 breaking changes.
+
 ## [v0.5.0] - 2025-04-16
 
 Initial bare minimum implementation with CURD Interface, Compile-Time Query Builder, Blob Stream Interface, and some builtin helper functions.

@@ -112,12 +112,12 @@ pub const ExecResult = struct {
     fn create(heap: Allocator) ExecResult {
         return .{
             .heap = heap,
-            .result = ArrayList([]ExecResult.Column).init(heap)
+            .result = ArrayList([]ExecResult.Column){}
         };
     }
 
     fn add(self: *ExecResult, columns: []ExecResult.Column) !void {
-        try self.result.append(columns);
+        try self.result.append(self.heap, columns);
     }
 
     /// # Releases Allocated Resources
@@ -135,7 +135,7 @@ pub const ExecResult = struct {
             heap.free(item);
         }
 
-        self.result.deinit();
+        self.result.deinit(self.heap);
     }
 
     /// # Counts Number of Retrieved Records
@@ -173,17 +173,19 @@ pub const ExecResult = struct {
     fn callbackZ(result: *ExecResult, ct: [*c][*c]u8, cn: [*c][*c]u8) !void {
         // List will never be empty
         // `exec()` only invokes callback when a row is retrieved
-        var list = ArrayList(ExecResult.Column).init(result.heap);
+        var list = ArrayList(ExecResult.Column){};
+
+        const heap = result.heap;
 
         var i: usize = 0;
         while (ct[i] != null) : (i += 1) {
             const name: Str = mem.span(cn[i]);
             const data: Str = mem.span(ct[i]);
-            try list.append(try makeColumn(result.heap, name, data));
+            try list.append(heap, try makeColumn(heap, name, data));
 
         }
 
-        try result.add(try list.toOwnedSlice());
+        try result.add(try list.toOwnedSlice(heap));
     }
 
     /// # Makes a Heap Allocated Column
