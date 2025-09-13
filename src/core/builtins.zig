@@ -82,8 +82,8 @@ pub const Index = struct {
         var result = try db.exec("PRAGMA index_list(" ++ from ++ ");");
         defer result.destroy();
 
-        var list = ArrayList(Info).init(heap);
-        errdefer list.deinit();
+        var list = ArrayList(Info){};
+        errdefer list.deinit(heap);
 
         while (result.next()) |record| {
             var index: Info = undefined;
@@ -108,10 +108,10 @@ pub const Index = struct {
                 } else unreachable;
             }
 
-            try list.append(index);
+            try list.append(heap, index);
         }
 
-        return try list.toOwnedSlice();
+        return try list.toOwnedSlice(heap);
     }
 
     /// # Frees Up Heap Allocated Memories

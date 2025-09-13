@@ -205,18 +205,20 @@ pub const CRUD = struct {
     ///
     /// **WARNING:** Result must be freed by calling `free()`
     pub fn readMany(self: *CRUD, comptime T: type, filter: anytype) ![]const T {
+        const heap = self.db.heap;
+
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
+            var params = sqlite3.Bind.init(heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
-        var records = ArrayList(T).init(self.db.heap);
+        var records = ArrayList(T){};
         while (try sqlite3.step(self.stmt) == .Row) {
-            var column = sqlite3.Column.init(self.db.heap, self.stmt);
-            try records.append(try types.convertTo(self.db.heap, &column, T));
+            var column = sqlite3.Column.init(heap, self.stmt);
+            try records.append(try types.convertTo(heap, &column, T));
         }
 
-        return try records.toOwnedSlice();
+        return try records.toOwnedSlice(heap);
     }
 
     /// # Returns Total Number of Matching Records
@@ -247,19 +249,21 @@ pub const CRUD = struct {
         filter: anytype,
         callback: ?ExecCallback
     ) !void {
+        const heap = self.db.heap;
+
         if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
+            var params = sqlite3.Bind.init(heap, self.stmt);
             try types.bindFilterData(&params, filter);
         }
 
-        var list = ArrayList([]const u8).init(self.db.heap);
+        var list = ArrayList([]const u8){};
         defer {
-            for (list.items) |item| self.db.heap.free(item);
-            list.deinit();
+            for (list.items) |item| heap.free(item);
+            list.deinit(heap);
         }
 
-        var params = sqlite3.Bind.init(self.db.heap, self.stmt);
-        try types.convertFrom(self.db.heap, &list, &params, record);
+        var params = sqlite3.Bind.init(heap, self.stmt);
+        try types.convertFrom(heap, &list, &params, record);
 
         const result = try sqlite3.step(self.stmt);
         const affected = sqlite3.changes64(self.db.instance);
