@@ -94,6 +94,13 @@ const sql = comptime Qb.Container.create(Model, "users", .RowId);
 std.debug.print("{s}\n", .{sql});
 ```
 
+To build SQL Statement for a record container where Primary Key is an UUID string, copy and run:
+
+```zig
+const sql = comptime Qb.Container.create(Model, "users", .UuidStr);
+std.debug.print("{s}\n", .{sql});
+```
+
 Checkout the [source](/zig-docs/index.html#src/root/core/builder.zig) for more details.
 
 **Remarks:** Containers with implicit **RowId** will automatically generate a primary key field named `rowid`. Thus, make sure to add this field in your View structure if `rowid` is required. Only create such container when you are intending to use this for **BlobStream**.

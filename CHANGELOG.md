@@ -22,6 +22,9 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item 2
 - A short description for fixed item n
 
+## [v1.0.0] - 2025-09-15
+
+Better code examples and documentation.
 
 ## [v0.6.0] - 2025-09-13
 

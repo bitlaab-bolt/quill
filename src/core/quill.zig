@@ -215,7 +215,7 @@ pub const CRUD = struct {
         var records = ArrayList(T){};
         while (try sqlite3.step(self.stmt) == .Row) {
             var column = sqlite3.Column.init(heap, self.stmt);
-            try records.append(try types.convertTo(heap, &column, T));
+            try records.append(heap, try types.convertTo(heap, &column, T));
         }
 
         return try records.toOwnedSlice(heap);

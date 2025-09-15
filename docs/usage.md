@@ -131,7 +131,7 @@ const sql = comptime blk: {
 };
 
 // Preparing Record Data
-// Mixing both static and dynamic data for memory leaks
+// Mixing both static and dynamic data for checking memory leaks
 
 const name = "John Doe";
 const msg = "This is the story about " ++ name;

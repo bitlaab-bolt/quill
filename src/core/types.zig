@@ -10,7 +10,7 @@ const ArrayList = std.ArrayList;
 const Allocator = mem.Allocator;
 
 const jsonic = @import("jsonic");
-const Json = jsonic.StaticJson;
+const Json = jsonic.StaticJSON;
 
 const sqlite3 = @import("../binding/sqlite3.zig");
 const Bind = sqlite3.Bind;
