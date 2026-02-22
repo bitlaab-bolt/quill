@@ -23,6 +23,10 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
+## [v1.1.0] - 2026-02-22
+
+Upgrading `Jsonic` to version 1.5.0 and Adding build flag for `SQLite JSON` manipulation.
+
 ## [v1.0.0] - 2025-09-15
 
 Initial bare minimum implementation with CURD Interface, Compile-Time Query Builder, Blob Stream Interface, and some builtin helper functions.

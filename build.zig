@@ -14,7 +14,9 @@ pub fn build(b: *std.Build) void {
     });
 
     pkg.addIncludePath(b.path("libs/include"));
-    pkg.addCSourceFile(.{.file = b.path("libs/src/sqlite3.c"), .flags = &.{}});
+    pkg.addCSourceFile(.{.file = b.path("libs/src/sqlite3.c"), .flags = &.{
+        "-DSQLITE_ENABLE_JSON1",
+    }});
 
     const main = b.addModule("main", .{
         .root_source_file = b.path("src/main.zig"),
