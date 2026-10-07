@@ -143,8 +143,8 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
                             const fmt_str = ":_" ++ f_name ++ "{d}_";
 
                             // e.g., `:_name999_` max limit is 999
-                            var buff: [fmt_str.len]u8 = undefined;
-                            const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
+                            var buff: [fmt_str.len + 1]u8 = undefined;
+                            const tag = try fmt.bufPrintSentinel(&buff, fmt_str, .{i}, 0);
                             const pos = try bind.parameterIndex(tag);
 
                             switch (comptime getFilterType(p)) {

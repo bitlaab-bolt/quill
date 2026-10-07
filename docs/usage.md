@@ -25,14 +25,22 @@ const heap = gpa_mem.allocator();
 
 ## Initial Setup
 
-Let's Initialize an on disk database with global configuration.
+Let's Initialize an on disk database with global configuration. The permission
+options are `ReadOnly`, `FileUri`, and `All` - where `All` creates the file if
+not exists with read write permission.
 
 ```zig
 try Quill.init(.Serialized);
 defer Quill.deinit();
 
-var db = try Quill.open(heap, "hello.db");
+var db = try Quill.open(heap, "hello.db", .All);
 defer db.close();
+```
+
+**Remarks:** Pass `null` as the filename for an in-memory database.
+
+```zig
+var db = try Quill.open(heap, null, .All);
 ```
 
 ## Schema Declaration
@@ -145,7 +153,7 @@ defer heap.destroy(soc_dyn);
 const soc = Social { .website = "example.one", .username = name };
 
 const record_data = Model {
-    .uuid = .{.blob = &Uuid.new()},
+    .uuid = .{.blob = &(try Uuid.new())},
     .name1 = .{.text = name},
     .name2 = null,
     .balance1 = 10.50,
@@ -458,7 +466,9 @@ const offset = blob.size() - 6;
 try blob.write(data, offset);
 ```
 
-**Remarks:** Make sure the `.ReadWrite` permission is set on `open()`. 
+**Remarks:** Make sure the `.ReadWrite` permission is set on `open()`. Also,
+the given container must use an implicit `rowid` primary key (e.g.,
+`Qb.Container.create(Model, "users", .RowId)`), otherwise `open()` fails. 
 
 ## Miscellaneous
 
@@ -476,14 +486,14 @@ Provides an Universally Unique IDentifier module for managing primary keys.
 Create a new slice of UUID v7.
 
 ```zig
-const id = Uuid.new();
+const id = try Uuid.new();
 std.debug.print("{any}\n", .{id});
 ```
 
 Create an URN (Uniform Resource Name) string from a given UUID slice.
 
 ```zig
-const id = Uuid.new();
+const id = try Uuid.new();
 const id_urn = try Uuid.toUrn(&id);
 std.debug.print("URN: {s}\n", .{id_urn});
 ```
@@ -498,9 +508,16 @@ std.debug.print("{any}\n", .{id});
 
 ### Timestamp
 
-Provides an Epoch timestamp in millisecond. Needed for record's timekeeping.
+Provides the current Epoch timestamp. Needed for record's timekeeping.
 
 ```zig
-const ts_ms = DateTime.timestamp();
-std.debug.print("Current Timestamp: {d}\n", .{ts_ms});
+const ts = DateTime.timestamp();
+std.debug.print("Current Timestamp: {d}\n", .{ts});
+```
+
+Following example returns the timestamp in millisecond.
+
+```zig
+const ts_ms = DateTime.msTimestamp();
+std.debug.print("Current Timestamp: {d} ms\n", .{ts_ms});
 ```

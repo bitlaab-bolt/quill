@@ -1,5 +1,5 @@
 //! # High-level SQLite Wrapper
-//! - See documentation at - https://bitlaabquill.web.app/
+//! - See documentation at - https://bitlaab.com/api-doc?pkg=quill
 
 pub const Uuid = @import("./core/uuid.zig");
 pub const Quill = @import("./core/quill.zig");

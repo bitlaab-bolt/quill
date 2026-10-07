@@ -655,11 +655,6 @@ pub const Record = struct {
     /// - `U` - Record Filter structure
     /// - `to` - Container name e.g., `users`, `accounts` etc.
     /// - `opt` - Record update option, Use `All` with **CAUTION**
-    /// # Generates `UPDATE` SQL Statement
-    /// - `T` - Record Model structure
-    /// - `U` - Record Filter structure
-    /// - `to` - Container name e.g., `users`, `accounts` etc.
-    /// - `opt` - Record update option, Use `All` with **CAUTION**
     pub fn update(
         T: type,
         U: type,
@@ -676,7 +671,7 @@ pub const Record = struct {
 
         const data = fields[0..fields.len - 2];
         const sql = ctPrint("UPDATE {s}\nSET {s}", .{to, data});
-        return Update(T, U, opt).create(sql);
+        return Update(U, opt).create(sql);
     }
 
     /// - `T` - Record Filter structure

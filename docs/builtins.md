@@ -17,6 +17,12 @@ try Builtins.Index.create(&db, "idx_name1", "users", "name1", .Default);
 
 ```
 
+To create a unique index that enforces uniqueness on the field values:
+
+```zig
+try Builtins.Index.create(&db, "idx_unique_email", "users", "email", .Unique);
+```
+
 ### Remove
 
 Removes an existing user defined index.

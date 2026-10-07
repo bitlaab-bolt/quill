@@ -32,4 +32,6 @@ exe.root_module.addImport("quill", quill.module("quill"));
 lib.root_module.addImport("quill", quill.module("quill"));
 ```
 
-**Remarks:** On windows, link **Lib C** with your project executable. e.g., `exe.linkLibC()`.
+**Remarks:** On windows, link **Lib C** with your project executable.
+
+e.g., `exe.root_module.link_libc = true;`.

@@ -135,7 +135,7 @@ const sql = comptime blk: {
         })
     });
 
-    sql.sort(&.{.{.desc = "age1"}});
+    sql.sort(&.{.{ .DESC = "age1" }});
     sql.limit(25);
     sql.skip(10);
 
@@ -145,13 +145,52 @@ const sql = comptime blk: {
 std.debug.print("{s}\n", .{sql});
 ```
 
+**Example 03:** Generate **SELECT DISTINCT** SQL statement.
+
+```zig
+const sql = comptime blk: {
+    var sql = Qb.Record.find(View, FilterProfile, "users");
+
+    sql.dist();
+    break :blk sql.statement();
+};
+
+std.debug.print("{s}\n", .{sql});
+```
+
+### Filter Operators
+
+`filter()` accepts following comparison operators. The third argument is the
+placeholder count for `.in` and `.!in` (e.g., `2` generates two bind params),
+pass `null` for everything else.
+
+| Operator | SQL Token |
+| --- | --- |
+| `.@"="` | `field = :_field_` |
+| `.@"!="` | `field != :_field_` |
+| `.@">"` | `field > :_field_` |
+| `.@"<"` | `field < :_field_` |
+| `.@">="` | `field >= :_field_` |
+| `.@"<="` | `field <= :_field_` |
+| `.contains` | `field LIKE :_field_` |
+| `.!contains` | `field NOT LIKE :_field_` |
+| `.between` | `field BETWEEN :_field1_ AND :_field2_` |
+| `.in` | `field IN (:_field1_, :_field2_, ...)` |
+| `.!in` | `field NOT IN (:_field1_, :_field2_, ...)` |
+| `.@"null"` | `field IS NULL` |
+| `.!null` | `field IS NOT NULL` |
+
+**Remarks:** For `.between`, `.in`, and `.!in` the filter field must be a list
+(`[]const Dt.Int` or `[]const Dt.Slice`) with a length matching the placeholder
+count. See [Data Types](/types) for the available filter field types.
+
 ### Count
 
 **Example 01:** Generate **COUNT(*)** SQL statement for all records.
 
 ```zig
 const sql = comptime blk: {
-    var sql = Qb.Record.count(Model, "users");
+    var sql = Qb.Record.count(void, "users");
     break :blk sql.statement();
 };
 
@@ -184,6 +223,15 @@ const sql = comptime blk: {
 };
 
 std.debug.print("{s}\n", .{sql});
+```
+
+**Example 02:** Generate **INSERT OR REPLACE** / **INSERT OR IGNORE** SQL
+statement. Use `Replace` to overwrite a record with a conflicting primary key,
+and `Ignore` to silently skip such records.
+
+```zig
+const replace = comptime Qb.Record.create(Model, "users", .Replace).statement();
+const ignore = comptime Qb.Record.create(Model, "users", .Ignore).statement();
 ```
 
 ### Update
