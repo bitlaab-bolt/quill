@@ -156,10 +156,8 @@ pub const ExecResult = struct {
         column_texts: [*c][*c]u8,
         column_names: [*c][*c]u8
     ) callconv(.c) c_int {
-        _ = columns; // Contains retrieved column counts
-
         const result: *ExecResult = @ptrCast(@alignCast(args));
-        callbackZ(result, column_texts, column_names) catch |err| {
+        callbackZ(result, column_texts, column_names, columns) catch |err| {
             log.err("{s}", .{@errorName(err)});
             return -1;
         };
@@ -167,17 +165,22 @@ pub const ExecResult = struct {
         return 0;
     }
 
-    fn callbackZ(result: *ExecResult, ct: [*c][*c]u8, cn: [*c][*c]u8) !void {
-        // List will never be empty
-        // `exec()` only invokes callback when a row is retrieved
+    fn callbackZ(
+        result: *ExecResult,
+        ct: [*c][*c]u8,
+        cn: [*c][*c]u8,
+        n_col: c_int
+    ) !void {
+        // Iterate by the exact column count: the NULL terminator cannot be
+        // used as a delimiter because SQLite passes NULL for SQL NULL values
         var list: ArrayList(ExecResult.Column) = .empty;
 
         const heap = result.heap;
 
         var i: usize = 0;
-        while (ct[i] != null) : (i += 1) {
+        while (i < @as(usize, @intCast(n_col))) : (i += 1) {
             const name: Str = mem.span(cn[i]);
-            const data: Str = mem.span(ct[i]);
+            const data: Str = if (ct[i] == null) "" else mem.span(ct[i]);
             try list.append(heap, try makeColumn(heap, name, data));
 
         }

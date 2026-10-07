@@ -14,6 +14,25 @@ const builder = @import("./builder.zig");
 const Str = []const u8;
 const Error = error { FailedIntegrityChecks };
 
+/// # Executes a Statement Expecting No Retrieved Records
+/// **Remarks:** Intended for internal use only
+fn run(db: *quill, sql: Str) !void {
+    var result = try db.exec(sql);
+    defer result.destroy();
+
+    debug.assert(result.count() == 0);
+}
+
+/// # Returns a Single Integer Value from a PRAGMA Statement
+/// **Remarks:** Intended for internal use only
+fn queryInt(db: *quill, comptime name: Str, comptime T: type) !T {
+    var result = try db.exec("PRAGMA " ++ name ++ ";");
+    defer result.destroy();
+
+    const res = result.next().?[0];
+    return try fmt.parseInt(T, res.data, 10);
+}
+
 /// # Contains Index Related Functionalities
 pub const Index = struct {
     const Mode = enum { Default, Unique };
@@ -41,38 +60,26 @@ pub const Index = struct {
         comptime idx: Str,
         comptime in: Str,
         comptime @"for": Str,
-        mode: Mode,
+        comptime mode: Mode,
     ) !void {
-        switch (mode) {
-            .Default => {
-                // e.g., CREATE INDEX IF NOT EXISTS idx_name ON users("first_name");
-                const fmt_str = "CREATE INDEX IF NOT EXISTS {s} ON {s}(\"{s}\");";
-                const sql = fmt.comptimePrint(fmt_str, .{idx, in, @"for"});
-                var result = try db.exec(sql);
-                defer result.destroy();
+        const prefix = switch (mode) {
+            .Default => "",
+            .Unique => "UNIQUE "
+        };
 
-                debug.assert(result.count() == 0);
-            },
-            .Unique => {
-                // e.g., CREATE UNIQUE INDEX IF NOT EXISTS idx_name ON users(first_name);
-                const fmt_str = "CREATE UNIQUE INDEX IF NOT EXISTS {s} ON {s}(\"{s}\");";
-                const sql = fmt.comptimePrint(fmt_str, .{idx, in, @"for"});
-                var result = try db.exec(sql);
-                defer result.destroy();
-
-                debug.assert(result.count() == 0);
-            }
-        }
+        // e.g., CREATE INDEX IF NOT EXISTS idx_name ON users("first_name");
+        const sql = fmt.comptimePrint(
+            "CREATE {s}INDEX IF NOT EXISTS {s} ON {s}(\"{s}\");",
+            .{prefix, idx, in, @"for"}
+        );
+        try run(db, sql);
     }
 
     /// # Removes an Existing Index
     /// **Remarks:** You should only remove user defined indexes
     /// - `idx` - Index name e.g., `idx_unique_email`
     pub fn remove(db: *quill, comptime idx: Str) !void {
-        var result = try db.exec("DROP INDEX " ++ idx ++ ";");
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, "DROP INDEX " ++ idx ++ ";");
     }
 
     /// # Returns All Associated Indexes in a Container
@@ -82,7 +89,7 @@ pub const Index = struct {
         var result = try db.exec("PRAGMA index_list(" ++ from ++ ");");
         defer result.destroy();
 
-        var list = ArrayList(Info){};
+        var list: ArrayList(Info) = .empty;
         errdefer list.deinit(heap);
 
         while (result.next()) |record| {
@@ -131,54 +138,34 @@ pub const Container = struct {
     /// - `from` - Current container name e.g., `users`, `accounts` etc.
     /// - `to` - New container name e.g., `clients`, `customers` etc.
     pub fn rename(db: *quill, comptime from: Str, comptime to: Str) !void {
-        const fmt_str = "ALTER TABLE {s} RENAME TO {s};";
-        const sql = fmt.comptimePrint(fmt_str, .{from, to});
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        const sql = fmt.comptimePrint(
+            "ALTER TABLE {s} RENAME TO {s};", .{from, to}
+        );
+        try run(db, sql);
     }
 
     /// # Removes All Records from a Container
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     /// - `act` - When **Purge**, vacuums unused space in the database file
     pub fn reset(db: *quill, comptime from: Str, act: Action) !void {
-        switch (act) {
-            .Retain => {
-                var result = try db.exec("DELETE FROM " ++ from ++ ";");
-                defer result.destroy();
+        const sql: Str = switch (act) {
+            .Retain => "DELETE FROM " ++ from ++ ";",
+            .Purge => "DELETE FROM " ++ from ++ "; VACUUM;"
+        };
 
-                debug.assert(result.count() == 0);
-            },
-            .Purge => {
-                var result = try db.exec("DELETE FROM " ++ from ++ "; VACUUM;");
-                defer result.destroy();
-
-                debug.assert(result.count() == 0);
-            }
-        }
+        try run(db, sql);
     }
 
     /// # Deletes an Entire Container
     /// - **CAUTION:** Once deleted, data will be lost permanently!
     /// - `name` - Container name e.g., `users`, `accounts` etc.
     pub fn delete(db: *quill, comptime name: Str, act: Action) !void {
-        switch (act) {
-            .Retain => {
-                const sql = "DROP TABLE IF EXISTS " ++ name ++ ";";
-                var result = try db.exec(sql);
-                defer result.destroy();
+        const sql: Str = switch (act) {
+            .Retain => "DROP TABLE IF EXISTS " ++ name ++ ";",
+            .Purge => "DROP TABLE IF EXISTS " ++ name ++ "; VACUUM;"
+        };
 
-                debug.assert(result.count() == 0);
-            },
-            .Purge => {
-                const sql = "DROP TABLE IF EXISTS " ++ name ++ "; VACUUM;";
-                var result = try db.exec(sql);
-                defer result.destroy();
-
-                debug.assert(result.count() == 0);
-            }
-        }
+        try run(db, sql);
     }
 
     /// # Renames a Container
@@ -206,10 +193,7 @@ pub const Container = struct {
             )
         };
 
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, sql);
     }
 
     /// # Renames a Field in a Given Container
@@ -224,10 +208,7 @@ pub const Container = struct {
     ) !void {
         const fmt_str = "ALTER TABLE {s} RENAME COLUMN {s} TO {s};";
         const sql = fmt.comptimePrint(fmt_str, .{name, from, to});
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, sql);
     }
 
     /// # Removes a Field from the Given Container
@@ -235,7 +216,7 @@ pub const Container = struct {
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn fieldRemove(db: *quill, comptime T: type, comptime from: Str) !void {
         if (@typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Model Structure";
+            const err_str = "@quill: Type of `{s}` Must be a Model Structure";
             @compileError(fmt.comptimePrint(err_str, .{@typeName(T)}));
         }
 
@@ -250,8 +231,8 @@ pub const Container = struct {
         };
 
         comptime var fields: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-           fields = fields ++ fmt.comptimePrint("{s}, ", .{f.name});
+        inline for (@typeInfo(T).@"struct".field_names) |f_name| {
+           fields = fields ++ fmt.comptimePrint("{s}, ", .{f_name});
         }
 
         const fmt_str = "INSERT INTO {s}_new ({s}) SELECT {s} FROM {s};";
@@ -305,32 +286,20 @@ pub const Pragma = struct {
     /// # Returns Current Schema Version
     /// **Remarks:** Use this exclusively for database migration
     pub fn version(db: *quill) !u16 {
-        var result = try db.exec("PRAGMA user_version;");
-        defer result.destroy();
-
-        const res = result.next().?[0];
-        return try fmt.parseInt(u16, res.data, 10);
+        return queryInt(db, "user_version", u16);
     }
 
     /// # Updates Current Schema Version
     /// **Remarks:** Use this exclusively for database migration
     /// - `num` - Version number for the current schema e.g., `1`, `2`, `3` etc.
     pub fn updateVersion(db: *quill, comptime num: u32) !void {
-        const sql = fmt.comptimePrint("PRAGMA user_version = {d};", .{num});
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, fmt.comptimePrint("PRAGMA user_version = {d};", .{num}));
     }
 
     /// # Returns Database Page Cache
     /// - Positive value means pages and negative value means size in kilobytes.
     pub fn cache(db: *quill) !i32 {
-        var result = try db.exec("PRAGMA cache_size;");
-        defer result.destroy();
-
-        const res = result.next().?[0];
-        return try fmt.parseInt(i32, res.data, 10);
+        return queryInt(db, "cache_size", i32);
     }
 
     /// # Sets Database Page Cache
@@ -338,49 +307,30 @@ pub const Pragma = struct {
     ///     - Sets the number of pages when positive.
     ///     - Sets the size in kilobytes when negative.
     pub fn setCache(db: *quill, comptime value: i32) !void {
-        const sql = fmt.comptimePrint("PRAGMA cache_size = {d};", .{value});
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, fmt.comptimePrint("PRAGMA cache_size = {d};", .{value}));
     }
 
     /// # Return Total Number of Pages
     pub fn pageCount(db: *quill) !u32 {
-        var result = try db.exec("PRAGMA page_count;");
-        defer result.destroy();
-
-        const res = result.next().?[0];
-        return try fmt.parseInt(u32, res.data, 10);
+        return queryInt(db, "page_count", u32);
     }
 
     /// # Returns Page Size in Bytes
     pub fn pageSize(db: *quill) !u16 {
-        var result = try db.exec("PRAGMA page_size;");
-        defer result.destroy();
-
-        const res = result.next().?[0];
-        return try fmt.parseInt(u16, res.data, 10);
+        return queryInt(db, "page_size", u16);
     }
 
     /// # Sets Page Size in Bytes
     /// - `size` - Must be the power of 2 (e.g., `4096`, `8192`, etc.).
     pub fn setPageSize(db: *quill, comptime size: u16) !void {
-        const sql = fmt.comptimePrint("PRAGMA page_size = {d};", .{size});
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, fmt.comptimePrint("PRAGMA page_size = {d};", .{size}));
     }
 
     /// # Optimizes the Database
     /// **Remarks:** Run this when the database connection is first opened.
     /// And perhaps once per day or once per hour for long-lived databases.
     pub fn optimize(db: *quill) !void {
-        var result = try db.exec("PRAGMA optimize;");
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, "PRAGMA optimize;");
     }
 
     /// # Returns Current Journal Mode
@@ -411,11 +361,7 @@ pub const Pragma = struct {
 
     /// # Returns Current Synchronous Mode
     pub fn synchronous(db: *quill) !SyncMode {
-        var result = try db.exec("PRAGMA synchronous;");
-        defer result.destroy();
-
-        const res = result.next().?[0];
-        const val = try fmt.parseInt(u8, res.data, 10);
+        const val = try queryInt(db, "synchronous", u8);
         return @enumFromInt(val);
     }
 
@@ -427,11 +373,7 @@ pub const Pragma = struct {
     /// - Writing to the database
     pub fn setSynchronous(db: *quill, comptime mode: SyncMode) !void {
         const val = @intFromEnum(mode);
-        const sql = fmt.comptimePrint("PRAGMA synchronous = {d};", .{val});
-        var result = try db.exec(sql);
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, fmt.comptimePrint("PRAGMA synchronous = {d};", .{val}));
     }
 
     /// # Checks Internal Consistency of the Database File
@@ -462,10 +404,7 @@ pub const Pragma = struct {
     /// **Remarks:** Call `claimUnusedSpace()` for the change to take effect.
     pub fn setReclaimMode(db: *quill, comptime mode: VacuumMode) !void {
         const mode_name = @tagName(mode);
-        var result = try db.exec("PRAGMA auto_vacuum = " ++ mode_name ++ ";");
-        defer result.destroy();
-
-        debug.assert(result.count() == 0);
+        try run(db, "PRAGMA auto_vacuum = " ++ mode_name ++ ";");
     }
 
     /// # Vacuums the Database File
@@ -473,11 +412,7 @@ pub const Pragma = struct {
     /// - `pages` - Number of pages to vacuum when on **INCREMENTAL** mode
     pub fn claimUnusedSpace(db: *quill, comptime pages: u16) !?u16 {
         switch (try reclaimStatus(db)) {
-            .NONE, .FULL => {
-                var result = try db.exec("VACUUM;");
-                defer result.destroy();
-                debug.assert(result.count() == 0);
-            },
+            .NONE, .FULL => try run(db, "VACUUM;"),
             .INCREMENTAL => {
                 const sql = fmt.comptimePrint(
                     "PRAGMA incremental_vacuum({d});", .{pages}

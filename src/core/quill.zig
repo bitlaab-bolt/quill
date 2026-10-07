@@ -131,7 +131,7 @@ pub const CRUD = struct {
             },
             .pointer => |p| {
                 if (!(p.attrs.@"const" and p.size == .slice)) {
-                    @compileError("quill: Pointer type must be `[]const T`");
+                    @compileError("@quill: Pointer type must be `[]const T`");
                 }
 
                 const items: T = result;
@@ -139,7 +139,7 @@ pub const CRUD = struct {
                 self.db.heap.free(items);
             },
             else => @compileError(
-                "quill: Result must be a struct of - `T`, `?T` or `[]const T`"
+                "@quill: Result must be a struct of - `T`, `?T` or `[]const T`"
             )
         }
     }
@@ -147,7 +147,7 @@ pub const CRUD = struct {
     fn release(heap: Allocator, data: anytype) void {
         const T = @TypeOf(data);
         const info = @typeInfo(T).@"struct";
-        const err_str = "quill: Pointer type must be `[]const T`";
+        const err_str = "@quill: Pointer type must be `[]const T`";
 
         inline for (info.field_names) |f_name| {
             const FT = @FieldType(T, f_name);
@@ -185,6 +185,15 @@ pub const CRUD = struct {
         }
     }
 
+    /// # Binds Filter Params when not **null**
+    /// **Remarks:** Intended for internal use only
+    fn bindFilter(self: *CRUD, filter: anytype) !void {
+        if (@TypeOf(filter) != @TypeOf(null)) {
+            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
+            try types.bindFilterData(&params, filter);
+        }
+    }
+
     /// # Retrieves a Single (Record) Query Result
     /// **Remarks:** For multiple records only the first one is retrieved
     /// - `T` - Record View structure
@@ -192,10 +201,7 @@ pub const CRUD = struct {
     ///
     /// **WARNING:** Result must be freed by calling `free()`
     pub fn readOne(self: *CRUD, comptime T: type, filter: anytype) !?T {
-        if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
-            try types.bindFilterData(&params, filter);
-        }
+        try self.bindFilter(filter);
 
         if (try sqlite3.step(self.stmt) == .Done) return null;
 
@@ -212,11 +218,7 @@ pub const CRUD = struct {
     /// **WARNING:** Result must be freed by calling `free()`
     pub fn readMany(self: *CRUD, comptime T: type, filter: anytype) ![]const T {
         const heap = self.db.heap;
-
-        if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(heap, self.stmt);
-            try types.bindFilterData(&params, filter);
-        }
+        try self.bindFilter(filter);
 
         var records: ArrayList(T) = .empty;
         while (try sqlite3.step(self.stmt) == .Row) {
@@ -231,10 +233,7 @@ pub const CRUD = struct {
     /// **Remarks:** When filter is `null` total record count is returned
     /// - `filter` - **null**, Otherwise instance of an Filter structure
     pub fn count(self: *CRUD, filter: anytype) !usize {
-        if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
-            try types.bindFilterData(&params, filter);
-        }
+        try self.bindFilter(filter);
 
         debug.assert(try sqlite3.step(self.stmt) == .Row);
         const column = sqlite3.Column.init(self.db.heap, self.stmt);
@@ -256,11 +255,7 @@ pub const CRUD = struct {
         callback: ?ExecCallback
     ) !void {
         const heap = self.db.heap;
-
-        if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(heap, self.stmt);
-            try types.bindFilterData(&params, filter);
-        }
+        try self.bindFilter(filter);
 
         var list: ArrayList([]const u8) = .empty;
         defer {
@@ -283,10 +278,7 @@ pub const CRUD = struct {
     ///
     /// `callback` - Captures remove result when not **NULL**
     pub fn remove(self: *CRUD, filter: anytype, callback: ?ExecCallback) !void {
-        if (@TypeOf(filter) != @TypeOf(null)) {
-            var params = sqlite3.Bind.init(self.db.heap, self.stmt);
-            try types.bindFilterData(&params, filter);
-        }
+        try self.bindFilter(filter);
 
         const result = try sqlite3.step(self.stmt);
         const affected = sqlite3.changes64(self.db.instance);

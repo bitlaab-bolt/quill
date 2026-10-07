@@ -29,6 +29,7 @@ Internal code refactoring, better documentation, and Zig-0.17.0 version support.
 
 ### Changed
 
+- builder.zig Record Create removed type
 - `Stencil.init()` now takes an additional `Io` as argument.
 
 ## [v1.1.0] - 2026-02-22

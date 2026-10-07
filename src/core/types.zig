@@ -2,7 +2,6 @@
 
 const std = @import("std");
 const fmt = std.fmt;
-const log = std.log;
 const mem = std.mem;
 const debug = std.debug;
 const Type = std.builtin.Type;
@@ -28,6 +27,16 @@ const Error = error {
     UnexpectedTypeCasting
 };
 
+/// # Parses JSON Text Column Data into the Given Type
+/// **Remarks:** Intended for internal use only
+fn parseJson(comptime T: type, col: *Column, heap: Allocator, i: i32) !T {
+    const json_str = if (try col.text(i)) |data| data
+    else return Error.UnexpectedNullValue;
+
+    defer heap.free(json_str);
+    return try Json.parse(T, heap, json_str);
+}
+
 /// # Supported Data Types for a Record Field
 /// - Only use the following types for data binding and retrieval
 /// - All types can be combined as optional except the **Primary Key**
@@ -37,8 +46,8 @@ pub const DataType = struct {
     pub const Float = f64;
     pub const Slice = []const u8;
 
-    const err_str = "quill: Unsupported TypeCast of Type `{s}`";
-    const err_str2 = "quill: Pointer Type of `{s}` Must be `[]const u8`";
+    const err_str = "@quill: Unsupported TypeCast of Type `{s}`";
+    const err_str2 = "@quill: Pointer Type of `{s}` Must be `[]const u8`";
 
     /// # TypeCasts from SQLite `Integer`, `Text`, or `Blob` Data
     /// **WARNING:** Use this type function exclusively for data retrieval
@@ -94,7 +103,7 @@ pub const DataType = struct {
 
     fn constSlice(ptr: Type.Pointer) void {
         if (!(ptr.attrs.@"const" and ptr.size == .slice)) {
-            const fmt_str = "quill: Pointer Type `{s}` Must be `[]const T`";
+            const fmt_str = "@quill: Pointer Type `{s}` Must be `[]const T`";
             @compileError(ctPrint(fmt_str, .{@typeName(ptr.child)}));
         }
     }
@@ -105,19 +114,17 @@ pub const DataType = struct {
 pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
     const info = @typeInfo(@TypeOf(filter));
     if (info != .@"struct") {
-        const err_str = "quill: Type of `{s}` Must be a Struct";
-        @compileError(ctPrint(err_str, .{@typeName(filter)}));
+        const err_str = "@quill: Type of `{s}` Must be a Struct";
+        @compileError(ctPrint(err_str, .{@typeName(@TypeOf(filter))}));
     }
 
-    const s_info = info.@"struct";
-    inline for (s_info.fields) |field| {
-        const value = @field(filter, field.name);
+    inline for (info.@"struct".field_names) |f_name| {
+        const value = @field(filter, f_name);
 
-        switch (@typeInfo(field.type)) {
+        switch (@typeInfo(@FieldType(@TypeOf(filter), f_name))) {
             .int => |n| {
                 if (n.signedness == .signed and n.bits == 64) {
-                    const param = ":_" ++ field.name ++ "_";
-                    const pos = try bind.parameterIndex(param);
+                    const pos = try bind.parameterIndex(":_" ++ f_name ++ "_");
                     try bind.int64(pos, value);
                 } else {
                     @compileError("Use `i64` Instead");
@@ -126,39 +133,34 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
             .pointer => |p| {
                 switch (comptime getFilterType(p)) {
                     .Text => {
-                        const param = ":_" ++ field.name ++ "_";
-                        const pos = try bind.parameterIndex(param);
+                        const pos = try bind.parameterIndex(
+                            ":_" ++ f_name ++ "_"
+                        );
                         try bind.text(pos, value);
                     },
-                    .IntList => {
+                    .IntList, .TextList => {
                         for (1..value.len + 1) |i| {
-                            const fmt_str = ":_" ++ field.name ++ "{d}_";
+                            const fmt_str = ":_" ++ f_name ++ "{d}_";
 
                             // e.g., `:_name999_` max limit is 999
                             var buff: [fmt_str.len]u8 = undefined;
                             const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
                             const pos = try bind.parameterIndex(tag);
-                            try bind.int64(pos, value[i - 1]);
-                        }
-                    },
-                    .TextList => {
-                        for (1..value.len + 1) |i| {
-                            const fmt_str = ":_" ++ field.name ++ "{d}_";
 
-                            // e.g., `:_name999_` max limit is 999
-                            var buff: [fmt_str.len]u8 = undefined;
-                            const tag = try fmt.bufPrintZ(&buff, fmt_str, .{i});
-                            const pos = try bind.parameterIndex(tag);
-                            try bind.text(pos, value[i - 1]);
+                            switch (comptime getFilterType(p)) {
+                                .IntList => try bind.int64(pos, value[i - 1]),
+                                .TextList => try bind.text(pos, value[i - 1]),
+                                else => unreachable
+                            }
                         }
                     }
                 }
             },
             else => {
-                const f_name = @typeName(field.type);
+                const f_name2 = @typeName(@FieldType(@TypeOf(filter), f_name));
                 const t_name = @typeName(@TypeOf(filter));
-                const err_str = "quill: Invalid Filter Type `{s}` on `{s}`";
-                @compileError(ctPrint(err_str, .{f_name, t_name}));
+                const err_str = "@quill: Invalid Filter Type `{s}` on `{s}`";
+                @compileError(ctPrint(err_str, .{f_name2, t_name}));
             }
         }
     }
@@ -167,7 +169,7 @@ pub fn bindFilterData(bind: *Bind, filter: anytype) !void {
 const FilterType = enum { Text, IntList, TextList };
 
 fn getFilterType(ptr: Type.Pointer) FilterType {
-    const err_msg = "quill: Use `u8`, `i64` or `[]const u8` Slices Instead";
+    const err_msg = "@quill: Use `u8`, `i64` or `[]const u8` Slices Instead";
     DataType.constSlice(ptr);
     return switch (ptr.child) {
         u8 => .Text,
@@ -187,7 +189,7 @@ pub fn convertFrom(
 ) !void {
     const info = @typeInfo(@TypeOf(record));
     if (info != .@"struct") {
-        const fmt_str = "quill: Type of `{s}` Must be a Struct";
+        const fmt_str = "@quill: Type of `{s}` Must be a Struct";
         @compileError(ctPrint(fmt_str, .{@typeName(record)}));
     }
 
@@ -214,9 +216,9 @@ fn typeCast(
     list: *ArrayList([]const u8),
 ) !void {
     const T = @TypeOf(value);
-    const err_str1 = "quill: Unsupported Type Cast `{s}`";
-    const err_str2 = "quill: Unexpected Type Cast `{s}`";
-    const err_str3 = "quill: Field Type of `{s}` doesn't Exist on `DataType`";
+    const err_str1 = "@quill: Unsupported Type Cast `{s}`";
+    const err_str2 = "@quill: Unexpected Type Cast `{s}`";
+    const err_str3 = "@quill: Field Type of `{s}` doesn't Exist on `DataType`";
 
     switch (@typeInfo(T)) {
         .@"struct" => |s| {
@@ -297,7 +299,7 @@ fn typeCast(
 pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     const info = @typeInfo(T);
     if (info != .@"struct") {
-        const fmt_str = "quill: Type of `{s}` Must be a Struct";
+        const fmt_str = "@quill: Type of `{s}` Must be a Struct";
         @compileError(ctPrint(fmt_str, .{@typeName(T)}));
     }
 
@@ -338,7 +340,7 @@ fn typeConversion(
     comptime T: type,
     comptime tag: []const u8
 ) !void {
-    const err_str = "quill: Field Type of `{s}` doesn't Exist on `DataType`";
+    const err_str = "@quill: Field Type of `{s}` doesn't Exist on `DataType`";
 
     switch (@typeInfo(T)) {
         .pointer => |p| {
@@ -355,14 +357,7 @@ fn typeConversion(
                 }
             } else {
                 if (col.dataType(i) == .Text) {
-                    const json_str = if (try col.text(i)) |data| data
-                    else return Error.UnexpectedNullValue;
-
-                    defer heap.free(json_str);
-                    errdefer heap.free(json_str);
-
-                    const data_struct = try Json.parse(T, heap, json_str);
-                    @field(rec, tag) = data_struct;
+                    @field(rec, tag) = try parseJson(T, col, heap, i);
                 } else {
                     return Error.MismatchedType;
                 }
@@ -370,14 +365,7 @@ fn typeConversion(
         },
         .@"struct" => {
             if (col.dataType(i) == .Text) {
-                const json_str = if (try col.text(i)) |data| data
-                else return Error.UnexpectedNullValue;
-
-                defer heap.free(json_str);
-                errdefer heap.free(json_str);
-
-                const data_struct = try Json.parse(T, heap, json_str);
-                @field(rec, tag) = data_struct;
+                @field(rec, tag) = try parseJson(T, col, heap, i);
             } else {
                 return Error.MismatchedType;
             }
@@ -392,7 +380,6 @@ fn typeConversion(
                 else return Error.UnexpectedNullValue;
 
                 defer heap.free(variant);
-                errdefer heap.free(variant);
 
                 inline for (@typeInfo(T).@"enum".field_names) |f_name| {
                     if (mem.eql(u8, f_name, variant)) {
@@ -400,6 +387,8 @@ fn typeConversion(
                         return;
                     }
                 }
+
+                return Error.MismatchedValue;
             } else {
                 return Error.MismatchedType;
             }

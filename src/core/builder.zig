@@ -5,7 +5,6 @@
 const std = @import("std");
 const fmt = std.fmt;
 const mem = std.mem;
-const debug = std.debug;
 const testing = std.testing;
 
 const Dt = @import("./types.zig").DataType;
@@ -13,6 +12,24 @@ const Dt = @import("./types.zig").DataType;
 
 const Str = []const u8;
 const ctPrint = fmt.comptimePrint;
+
+/// # Verifies the Given Type is a Structure
+/// **Remarks:** Intended for internal use only
+fn requireStruct(T: type, comptime role: Str) void {
+    if (@typeInfo(T) != .@"struct") {
+        const err_str = "@quill: Type of `{s}` Must be a " ++ role ++ " Structure";
+        @compileError(ctPrint(err_str, .{@typeName(T)}));
+    }
+}
+
+/// # Verifies the Given Type is a Filter Structure
+/// **Remarks:** Intended for internal use only
+fn requireFilter(T: type) void {
+    if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
+        const err_str = "@quill: Type of `{s}` Must be a Filter Structure";
+        @compileError(ctPrint(err_str, .{@typeName(T)}));
+    }
+}
 
 /// # SQLite Database Table Statement Builder
 pub const Container = struct {
@@ -29,13 +46,10 @@ pub const Container = struct {
     /// have to provide a primary key in such cases but including an uuid field
     /// could prevent Primary Key Localization. Making best of the both worlds!
     pub fn create(T: type, name: Str, pk: PrimaryKey) Str {
-        if (@typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Model Structure";
-            @compileError(ctPrint(err_str, .{@typeName(T)}));
-        }
+        requireStruct(T, "Model");
 
         if (pk == .Uuid and !@hasField(T, "uuid")) {
-            const err_str = "quill: Model Structure `{s}` has no `uuid` Field";
+            const err_str = "@quill: Model Structure `{s}` has no `uuid` Field";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
@@ -62,7 +76,7 @@ pub const Container = struct {
     /// # Generates SQL Text for a Given Field
     /// **Remarks:** Compile-Time function e.g., `comptime getToken()`
     fn genToken(T: type, field: Str, opt: bool, pk: PrimaryKey) Str {
-        const err_str = "quill: Malformed Type `{s}`";
+        const err_str = "@quill: Malformed Type `{s}`";
 
         switch (@typeInfo(T)) {
             .bool, .int => {
@@ -114,7 +128,7 @@ pub const Container = struct {
                             };
                             return ctPrint(fmt_str, .{field});
                         } else {
-                            @compileError("quill: UUID Can't be Optional");
+                            @compileError("@quill: UUID Can't be Optional");
                         }
                     } else {
                         if (!opt) {
@@ -126,8 +140,8 @@ pub const Container = struct {
                         }
                     }
                 } else {
-                    const name = s.fields[0].name;
-                    const err_str2 = "quill: Invalid Field Name `{s}` in `{s}`";
+                    const name = s.field_names[0];
+                    const err_str2 = "@quill: Invalid Field `{s}` in `{s}`";
                     @compileError(ctPrint(err_str2, .{name, @typeName(T)}));
                 }
             },
@@ -181,36 +195,27 @@ const Operator = enum {
     /// - `len` - **null**, or the number of parameters for `in` and `@"!in`
     fn genToken(field: Str, op: Operator, len: ?u8) Str {
         switch (op) {
-            .@"=" => {
-                return ctPrint("{s} = :_{s}_", .{field, field});
-            },
-            .@"!=" => {
-                return ctPrint("{s} != :_{s}_", .{field, field});
-            },
-            .@">" => {
-                return ctPrint("{s} > :_{s}_", .{field, field});
-            },
-            .@"<" => {
-                return ctPrint("{s} < :_{s}_", .{field, field});
-            },
-            .@">=" => {
-                return ctPrint("{s} >= :_{s}_", .{field, field});
-            },
-            .@"<=" => {
-                return ctPrint("{s} <= :_{s}_", .{field, field});
-            },
-            .contains => {
-                return ctPrint("{s} LIKE :_{s}_", .{field, field});
-            },
-            .@"!contains" => {
-                return ctPrint("{s} NOT LIKE :_{s}_", .{field, field});
+            .@"=", .@"!=", .@">", .@"<", .@">=", .@"<=", .contains, .@"!contains" => {
+                const sign: Str = switch (op) {
+                    .@"=" => "=",
+                    .@"!=" => "!=",
+                    .@">" => ">",
+                    .@"<" => "<",
+                    .@">=" => ">=",
+                    .@"<=" => "<=",
+                    .contains => "LIKE",
+                    .@"!contains" => "NOT LIKE",
+                    else => unreachable
+                };
+
+                return ctPrint("{s} {s} :_{s}_", .{field, sign, field});
             },
             .between => {
                 const fmt_str = "{s} BETWEEN :_{s}1_ AND :_{s}2_";
                 return ctPrint(fmt_str, .{field, field, field});
             },
-            .in => {
-                if (len == null) @compileError("quill: `len` can't be `null`");
+            .in, .@"!in" => {
+                if (len == null) @compileError("@quill: `len` can't be `null`");
 
                 comptime var params: Str = "";
                 for (1..len.? + 1) |i| {
@@ -218,21 +223,9 @@ const Operator = enum {
                     params = params ++ parm;
                 }
 
-                const fmt_str = "{s} IN ({s})";
                 const data = params[0..params.len - 2];
-                return ctPrint(fmt_str, .{field, data});
-            },
-            .@"!in" => {
-                if (len == null) @compileError("quill: `len` can't be `null`");
-
-                comptime var params: Str = "";
-                for (1..len.? + 1) |i| {
-                    const parm = ctPrint(":_{s}{d}_, ", .{field, i});
-                    params = params ++ parm;
-                }
-
-                const fmt_str = "{s} NOT IN ({s})";
-                const data = params[0..params.len - 2];
+                const fmt_str = if (op == .in) "{s} IN ({s})"
+                else "{s} NOT IN ({s})";
                 return ctPrint(fmt_str, .{field, data});
             },
             .@"null" => {
@@ -347,7 +340,7 @@ pub const Record = struct {
     /// # Ordered Function Execution for Query Chain
     fn FnChain(comptime T: type) type {
         if (@typeInfo(T) != .@"enum") {
-            const err_str = "quill: `{s}` Must be an `enum` Type";
+            const err_str = "@quill: `{s}` Must be an `enum` Type";
             @compileError(ctPrint(err_str, .{@typeName(T)}));
         }
 
@@ -390,15 +383,8 @@ pub const Record = struct {
     /// - `U` - Record Filter structure
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn find(T: type, U: type, from: Str) Find(T, U) {
-        if (@typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a View Structure";
-            @compileError(ctPrint(err_str, .{@typeName(T)}));
-        }
-
-        if (@typeInfo(U) != .void and @typeInfo(U) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
-            @compileError(ctPrint(err_str, .{@typeName(U)}));
-        }
+        requireStruct(T, "View");
+        requireFilter(U);
 
         var fields: Str = "";
         inline for (@typeInfo(T).@"struct".field_names) |f_name| {
@@ -415,9 +401,6 @@ pub const Record = struct {
     /// - `U` - Record Filter structure
     fn Find(T: type, U: type) type {
         return struct {
-            const t_view: T = mem.zeroes(T);
-            const t_filter: U = mem.zeroes(U);
-
             stmt: Str,
             seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
 
@@ -446,8 +429,8 @@ pub const Record = struct {
                 op: Operator,
                 len: ?u8
             ) Str {
-                const t = @TypeOf(@TypeOf(self.*).t_filter);
-                return Common.filter(t, field, op, len);
+                _ = self;
+                return Common.filter(U, field, op, len);
             }
 
             /// # Generates SQL Logical Operator Token
@@ -472,25 +455,24 @@ pub const Record = struct {
             /// - Generates **ORDER BY** clause
             pub fn sort(self: *Self, order:[]const OrderBy) void {
                 self.seq.add(.OrderedBy) catch |err| {
-                    const err_str = "quill: Builder Function - {s}";
+                    const err_str = "@quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
 
-                const t = @TypeOf(Self.t_view);
                 const err_str = "Mismatched Filter Field Name `{s}`";
 
                 var clause: Str = "";
                 for (order) |field| {
                     switch (field) {
                         .ASC => |v| {
-                            if (@hasField(t, v)) {
+                            if (@hasField(T, v)) {
                                 clause = clause ++ ctPrint("{s} ASC, ", .{v});
                             } else {
                                 @compileError(ctPrint(err_str, .{v}));
                             }
                         },
                         .DESC => |v| {
-                            if (@hasField(t, v)) {
+                            if (@hasField(T, v)) {
                                 clause = clause ++ ctPrint("{s} DESC, ", .{v});
                             } else {
                                 @compileError(ctPrint(err_str, .{v}));
@@ -508,7 +490,7 @@ pub const Record = struct {
             /// - Generates **LIMIT** clause
             pub fn limit(self: *Self, num: u32) void {
                 self.seq.add(.Limit) catch |err| {
-                    const err_str = "quill: Builder Function - {s}";
+                    const err_str = "@quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
 
@@ -520,7 +502,7 @@ pub const Record = struct {
             /// - Generates **OFFSET** clause
             pub fn skip(self: *Self, num: u32) void {
                 self.seq.add(.Offset) catch |err| {
-                    const err_str = "quill: Builder Function - {s}";
+                    const err_str = "@quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
                 };
 
@@ -541,27 +523,26 @@ pub const Record = struct {
     /// - `T` - Record Filter structure
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     pub fn count(T: type, from: Str) Count(T) {
-        if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
-            @compileError(ctPrint(err_str, .{@typeName(err_str)}));
-        }
+        requireFilter(T);
 
         const fmt_str = "SELECT COUNT(*) FROM {s}";
         const sql = ctPrint(fmt_str, .{from});
         return Count(T).create(sql);
     }
 
-    /// - `T` - Record Filter structure
-    fn Count(comptime T: type) type {
+    /// # Shared Builder for Filter Capable Statements
+    /// - `U` - Record Filter structure (may be `void`)
+    /// - `guard` - Enforces statement constraint when not **null**
+    /// - `label` - Constraint violation message e.g., `Update`
+    /// **Remarks:** Intended for internal use only
+    fn Filtered(comptime U: type, comptime guard: ?Constraint, comptime label: Str) type {
         return struct {
-            const t_filter: T = mem.zeroes(T);
-
             stmt: Str,
             seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
 
             const Self = @This();
 
-            /// # Creates Count Query Builder
+            /// # Creates Query Builder
             /// **Remarks:** Intended for internal use only
             fn create(sql: Str) Self { return .{.stmt = sql}; }
 
@@ -572,8 +553,8 @@ pub const Record = struct {
                 op: Operator,
                 len: ?u8
             ) Str {
-                const t = @TypeOf(@TypeOf(self.*).t_filter);
-                return Common.filter(t, field, op, len);
+                _ = self;
+                return Common.filter(U, field, op, len);
             }
 
             /// # Generates SQL Logical Operator Token
@@ -595,8 +576,27 @@ pub const Record = struct {
             }
 
             /// # Returns Evaluated SQL Statement
-            pub fn statement(self: *Self) Str { return Common.statement(self); }
+            pub fn statement(self: *Self) Str {
+                if (guard) |opt| {
+                    const fc = self.seq.peek();
+                    const pass = switch (opt) {
+                        .All => fc == null,
+                        .Exact => fc != null and fc == .Where
+                    };
+
+                    if (!pass) @compileError(
+                        "@quill: Failed " ++ label ++ " Constraint"
+                    );
+                }
+
+                return Common.statement(self);
+            }
         };
+    }
+
+    /// - `T` - Record Filter structure
+    fn Count(comptime T: type) type {
+        return Filtered(T, null, "Count");
     }
 
     //##########################################################################
@@ -606,11 +606,8 @@ pub const Record = struct {
     /// # Generates `INSERT` SQL Statement
     /// - `T` - Record Model structure
     /// - `to` - Container name e.g., `users`, `accounts` etc.
-    pub fn create(T: type, to: Str, act: Action) Create(T) {
-        if (@typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Model Structure";
-            @compileError(ctPrint(err_str, .{@typeName(err_str)}));
-        }
+    pub fn create(T: type, to: Str, act: Action) Create() {
+        requireStruct(T, "Model");
 
         const token = switch(act) {
             .Default => ctPrint("INSERT INTO {s}", .{to}),
@@ -630,14 +627,12 @@ pub const Record = struct {
 
         const fmt_str = "{s} ({s})\nVALUES ({s})";
         const sql = ctPrint(fmt_str, .{token, f_data, v_data});
-        return Create(T).create(sql);
+        return Create().create(sql);
     }
 
-    /// - `T` - Record Model structure
-    fn Create(T: type) type {
+    /// - Record Model structure
+    fn Create() type {
         return struct {
-            const t_model: T = mem.zeroes(T);
-
             stmt: Str,
 
             const Self = @This();
@@ -660,87 +655,33 @@ pub const Record = struct {
     /// - `U` - Record Filter structure
     /// - `to` - Container name e.g., `users`, `accounts` etc.
     /// - `opt` - Record update option, Use `All` with **CAUTION**
-    pub fn update(T: type, U: type, to: Str, opt: Constraint) Update(T, U) {
-        if (@typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Model Structure";
-            @compileError(ctPrint(err_str, .{@typeName(T)}));
-        }
-
-        if (@typeInfo(U) != .void and @typeInfo(U) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
-            @compileError(ctPrint(err_str, .{@typeName(U)}));
-        }
+    /// # Generates `UPDATE` SQL Statement
+    /// - `T` - Record Model structure
+    /// - `U` - Record Filter structure
+    /// - `to` - Container name e.g., `users`, `accounts` etc.
+    /// - `opt` - Record update option, Use `All` with **CAUTION**
+    pub fn update(
+        T: type,
+        U: type,
+        to: Str,
+        comptime opt: Constraint
+    ) Update(U, opt) {
+        requireStruct(T, "Model");
+        requireFilter(U);
 
         var fields: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-            fields = fields ++ ctPrint("{s} = :{s}, ", .{f.name, f.name});
+        inline for (@typeInfo(T).@"struct".field_names) |f_name| {
+            fields = fields ++ ctPrint("{s} = :{s}, ", .{f_name, f_name});
         }
 
         const data = fields[0..fields.len - 2];
         const sql = ctPrint("UPDATE {s}\nSET {s}", .{to, data});
-        return Update(T, U).create(sql, opt);
+        return Update(T, U, opt).create(sql);
     }
 
-    /// - `T` - Record Model structure
-    /// - `U` - Record Filter structure
-    fn Update(T: type, U: type) type {
-        return struct {
-            const t_model: T = mem.zeroes(T);
-            const t_filter: U = mem.zeroes(U);
-
-            stmt: Str,
-            option: Constraint = undefined,
-            seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
-
-            const Self = @This();
-
-            /// # Creates Update Query Builder
-            /// **Remarks:** Intended for internal use only
-            fn create(sql: Str, opt: Constraint) Self {
-                return .{.stmt = sql, .option = opt};
-            }
-
-            /// # Generates SQL Comparison Operator Token
-            pub fn filter(
-                self: *const Self,
-                field: Str,
-                op: Operator,
-                len: ?u8
-            ) Str {
-                const t = @TypeOf(@TypeOf(self.*).t_filter);
-                return Common.filter(t, field, op, len);
-            }
-
-            /// # Generates SQL Logical Operator Token
-            pub fn chain(self: *const Self, op: ChainOperator) Str {
-                _ = self;
-                return Common.chain(op);
-            }
-
-            /// # Combines Multiple Token as SQL Group
-            pub fn group(self: *const Self, tokens: []const Str) Str {
-                _ = self;
-                return Common.group(tokens);
-            }
-
-            /// # Generates SQL Clause form Given Tokens
-            /// - Generates **WHERE** clause
-            pub fn when(self: *Self, tokens: []const Str) void {
-                return Common.when(self, tokens);
-            }
-
-            /// # Returns Evaluated SQL Statement
-            pub fn statement(self: *Self) Str {
-                const fc = self.seq.peek();
-                const pass = switch (self.option) {
-                    .All => if (fc == null) true else false,
-                    .Exact => if (fc != null and fc == .Where) true else false
-                };
-
-                if (!pass) @compileError("quill: Failed Update Constraint");
-                return Common.statement(self);
-            }
-        };
+    /// - `T` - Record Filter structure
+    fn Update(comptime T: type, comptime guard: Constraint) type {
+        return Filtered(T, guard, "Update");
     }
 
     //##########################################################################
@@ -751,74 +692,16 @@ pub const Record = struct {
     /// - `T` - Record Filter structure
     /// - `from` - Container name e.g., `users`, `accounts` etc.
     /// - `opt` - Record delete option, Use `All` with **CAUTION**
-    pub fn remove(T: type, from: Str, opt: Constraint) Remove(T) {
-        if (@typeInfo(T) != .void and @typeInfo(T) != .@"struct") {
-            const err_str = "quill: Type of `{s}` Must be a Filter Structure";
-            @compileError(ctPrint(err_str, .{@typeName(T)}));
-        }
+    pub fn remove(T: type, from: Str, comptime opt: Constraint) Remove(T, opt) {
+        requireFilter(T);
 
         const sql = ctPrint("DELETE FROM {s}", .{from});
-        return Remove(T).create(sql, opt);
+        return Remove(T, opt).create(sql);
     }
 
     /// - `T` - Record Filter structure
-    fn Remove(T: type) type {
-        return struct {
-            const t_filter: T = mem.zeroes(T);
-
-            stmt: Str,
-            option: Constraint = undefined,
-            seq: FnChain(ChainClause) = FnChain(ChainClause).new(),
-
-            const Self = @This();
-
-            /// # Creates Remove Query Builder
-            /// **Remarks:** Intended for internal use only
-            fn create(sql: Str, opt: Constraint) Self {
-                return .{.stmt = sql, .option = opt};
-            }
-
-            /// # Generates SQL Comparison Operator Token
-            pub fn filter(
-                self: *const Self,
-                field: Str,
-                op: Operator,
-                len: ?u8
-            ) Str {
-                const t = @TypeOf(@TypeOf(self.*).t_filter);
-                return Common.filter(t, field, op, len);
-            }
-
-            /// # Generates SQL Logical Operator Token
-            pub fn chain(self: *const Self, op: ChainOperator) Str {
-                _ = self;
-                return Common.chain(op);
-            }
-
-            /// # Combines Multiple Token as SQL Group
-            pub fn group(self: *const Self, tokens: []const Str) Str {
-                _ = self;
-                return Common.group(tokens);
-            }
-
-            /// # Generates SQL Clause form Given Tokens
-            /// - Generates **WHERE** clause
-            pub fn when(self: *Self, tokens: []const Str) void {
-                return Common.when(self, tokens);
-            }
-
-            /// # Returns Evaluated SQL Statement
-            pub fn statement(self: *Self) Str {
-                const fc = self.seq.peek();
-                const pass = switch (self.option) {
-                    .All => if (fc == null) true else false,
-                    .Exact => if (fc != null and fc == .Where) true else false
-                };
-
-                if (!pass) @compileError("quill: Failed Remove Constraint");
-                return Common.statement(self);
-            }
-        };
+    fn Remove(comptime T: type, comptime guard: Constraint) type {
+        return Filtered(T, guard, "Remove");
     }
 };
 
@@ -832,12 +715,12 @@ const Common = struct {
     /// **Remarks:** Generic filter function implementation
     pub fn filter(T: type, field: Str, op: Operator, len: ?u8) Str {
         if (@typeInfo(T) == .void) {
-            const err_str = "quill: Filter Structure can't be `void`";
+            const err_str = "@quill: Filter Structure can't be `void`";
             @compileError(ctPrint(err_str, .{}));
         }
 
         if (!@hasField(T, field)) {
-            const err_str = "quill: Field `{s}` doesn't Exists on `{s}`";
+            const err_str = "@quill: Field `{s}` doesn't Exists on `{s}`";
             @compileError(ctPrint(err_str, .{field, @typeName(T)}));
         }
 
@@ -864,7 +747,7 @@ const Common = struct {
     /// **Remarks:** Generic when function implementation
     pub fn when(self: anytype, tokens: []const Str) void {
         self.seq.add(.Where) catch |err| {
-            const err_str = "quill: Builder Function - {s}";
+            const err_str = "@quill: Builder Function - {s}";
             @compileError(ctPrint(err_str, .{@errorName(err)}));
         };
 
@@ -879,11 +762,95 @@ const Common = struct {
     /// **Remarks:** Generic statement function implementation
     pub fn statement(self: anytype) Str {
         if (!mem.endsWith(u8, self.stmt, ";")) self.stmt = self.stmt ++ ";"
-        else @compileError("quill: Invalid Function Chain");
+        else @compileError("@quill: Invalid Function Chain");
 
         return self.stmt;
     }
 };
+
+test "record statements" {
+    const Model = struct { id: i64, name: []const u8, score: f64 };
+    const Filter = struct { name: []const u8, score: i64 };
+
+    // FIND with DISTINCT, WHERE, ORDER BY, LIMIT and OFFSET
+    {
+        const find_stmt = comptime blk: {
+            var sql = Record.find(Model, Filter, "users");
+            const eq = sql.filter("name", .@"=", null);
+            const bt = sql.filter("score", .between, null);
+            const in = sql.filter("score", .in, 2);
+            const grp = sql.group(&.{ eq, "AND", "NOT", bt });
+            sql.when(&.{ grp, "OR", in });
+            sql.sort(&.{ .{ .ASC = "name" }, .{ .DESC = "score" } });
+            sql.limit(10);
+            sql.skip(5);
+            break :blk sql.statement();
+        };
+        try testing.expectEqualStrings(
+            "SELECT DISTINCT id, name, score FROM users\nWHERE (name = :_name_ AND NOT score BETWEEN :_score1_ AND :_score2_) OR score IN (:_score1_, :_score2_)\nORDER BY name ASC, score DESC\nLIMIT 10\nOFFSET 5;",
+            find_stmt
+        );
+    }
+
+    // COUNT with WHERE
+    {
+        const stmt = comptime blk: {
+            var sql = Record.count(Filter, "users");
+            const f = sql.filter("score", .@">", null);
+            sql.when(&.{f});
+            break :blk sql.statement();
+        };
+        try testing.expectEqualStrings(
+            "SELECT COUNT(*) FROM users\nWHERE score > :_score_;",
+            stmt
+        );
+    }
+
+    // UPDATE with WHERE Constraint
+    {
+        const stmt = comptime blk: {
+            var sql = Record.update(Model, Filter, "users", .Exact);
+            const f = sql.filter("name", .contains, null);
+            sql.when(&.{f});
+            break :blk sql.statement();
+        };
+        try testing.expectEqualStrings(
+            "UPDATE users\nSET id = :id, name = :name, score = :score\nWHERE name LIKE :_name_",
+            stmt
+        );
+    }
+
+    // REMOVE All and Exact
+    {
+        const stmt = comptime blk: {
+            var sql = Record.remove(Filter, "users", .All);
+            break :blk sql.statement();
+        };
+        try testing.expectEqualStrings("DELETE FROM users;", stmt);
+    }
+
+    {
+        const stmt = comptime blk: {
+            var sql = Record.remove(Filter, "users", .Exact);
+            const f = sql.filter("name", .@"!=", null);
+            sql.when(&.{f});
+            break :blk sql.statement();
+        };
+        try testing.expectEqualStrings(
+            "DELETE FROM users\nWHERE name != :_name_",
+            stmt
+        );
+    }
+
+    // CREATE with Action
+    {
+        const stmt = comptime Record.create(Model, "users", .Ignore).statement();
+        try testing.expectEqualStrings(
+            "INSERT OR IGNORE INTO users (id, name, score)\nVALUES (:id, :name, :score)",
+            stmt
+        );
+    }
+}
 
 test {
     // Reference for Private Declarations
