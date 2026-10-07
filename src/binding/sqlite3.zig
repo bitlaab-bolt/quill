@@ -6,10 +6,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const ArrayList = std.ArrayList;
 
-const sqlite3 = @cImport({
-    @cInclude("sqlite3.h");
-    @cInclude("sqlite3ext.h");
-});
+const sqlite3 = @import("sqlite3");
 
 
 const Str = []const u8;
@@ -112,7 +109,7 @@ pub const ExecResult = struct {
     fn create(heap: Allocator) ExecResult {
         return .{
             .heap = heap,
-            .result = ArrayList([]ExecResult.Column){}
+            .result = .empty
         };
     }
 
@@ -173,7 +170,7 @@ pub const ExecResult = struct {
     fn callbackZ(result: *ExecResult, ct: [*c][*c]u8, cn: [*c][*c]u8) !void {
         // List will never be empty
         // `exec()` only invokes callback when a row is retrieved
-        var list = ArrayList(ExecResult.Column){};
+        var list: ArrayList(ExecResult.Column) = .empty;
 
         const heap = result.heap;
 

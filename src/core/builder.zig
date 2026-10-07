@@ -40,16 +40,13 @@ pub const Container = struct {
         }
 
         comptime var fields: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-            switch (@typeInfo(f.type)) {
-                .optional => |o| {
-                    const tokens = comptime genToken(o.child, f.name, true, pk);
-                    fields = fields ++ tokens;
-                },
-                else => {
-                    const tokens = comptime genToken(f.type, f.name,false, pk);
-                    fields = fields ++ tokens;
-                }
+        inline for (@typeInfo(T).@"struct".field_names) |f_name| {
+            const FT = @FieldType(T, f_name);
+            switch (@typeInfo(FT)) {
+                .optional => |o|
+                    fields = fields ++ genToken(o.child, f_name, true, pk),
+                else =>
+                    fields = fields ++ genToken(FT, f_name, false, pk)
             }
         }
 
@@ -87,7 +84,7 @@ pub const Container = struct {
                 }
             },
             .@"struct" => |s| {
-                if (s.fields.len != 1) {
+                if (s.field_names.len != 1) {
                     @compileError(ctPrint(err_str, .{@typeName(T)}));
                 }
 
@@ -185,32 +182,32 @@ const Operator = enum {
     fn genToken(field: Str, op: Operator, len: ?u8) Str {
         switch (op) {
             .@"=" => {
-                return ctPrint("{s} = :_{s}_", .{field} ** 2);
+                return ctPrint("{s} = :_{s}_", .{field, field});
             },
             .@"!=" => {
-                return ctPrint("{s} != :_{s}_", .{field} ** 2);
+                return ctPrint("{s} != :_{s}_", .{field, field});
             },
             .@">" => {
-                return ctPrint("{s} > :_{s}_", .{field} ** 2);
+                return ctPrint("{s} > :_{s}_", .{field, field});
             },
             .@"<" => {
-                return ctPrint("{s} < :_{s}_", .{field} ** 2);
+                return ctPrint("{s} < :_{s}_", .{field, field});
             },
             .@">=" => {
-                return ctPrint("{s} >= :_{s}_", .{field} ** 2);
+                return ctPrint("{s} >= :_{s}_", .{field, field});
             },
             .@"<=" => {
-                return ctPrint("{s} <= :_{s}_", .{field} ** 2);
+                return ctPrint("{s} <= :_{s}_", .{field, field});
             },
             .contains => {
-                return ctPrint("{s} LIKE :_{s}_", .{field} ** 2);
+                return ctPrint("{s} LIKE :_{s}_", .{field, field});
             },
             .@"!contains" => {
-                return ctPrint("{s} NOT LIKE :_{s}_", .{field} ** 2);
+                return ctPrint("{s} NOT LIKE :_{s}_", .{field, field});
             },
             .between => {
                 const fmt_str = "{s} BETWEEN :_{s}1_ AND :_{s}2_";
-                return ctPrint(fmt_str, .{field} ** 3);
+                return ctPrint(fmt_str, .{field, field, field});
             },
             .in => {
                 if (len == null) @compileError("quill: `len` can't be `null`");
@@ -404,8 +401,8 @@ pub const Record = struct {
         }
 
         var fields: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |f| {
-            fields = fields ++ ctPrint("{s}, ", .{f.name});
+        inline for (@typeInfo(T).@"struct".field_names) |f_name| {
+            fields = fields ++ ctPrint("{s}, ", .{f_name});
         }
 
         const data = fields[0..fields.len - 2];
@@ -623,9 +620,9 @@ pub const Record = struct {
 
         var fields: Str = "";
         var values: Str = "";
-        inline for (@typeInfo(T).@"struct".fields) |field| {
-            fields = fields ++ ctPrint("{s}, ", .{field.name});
-            values = values ++ ctPrint(":{s}, ", .{field.name});
+        inline for (@typeInfo(T).@"struct".field_names) |f_name| {
+            fields = fields ++ ctPrint("{s}, ", .{f_name});
+            values = values ++ ctPrint(":{s}, ", .{f_name});
         }
 
         const f_data = fields[0..fields.len - 2];
@@ -676,7 +673,7 @@ pub const Record = struct {
 
         var fields: Str = "";
         inline for (@typeInfo(T).@"struct".fields) |f| {
-            fields = fields ++ ctPrint("{s} = :{s}, ", .{f.name} ** 2);
+            fields = fields ++ ctPrint("{s} = :{s}, ", .{f.name, f.name});
         }
 
         const data = fields[0..fields.len - 2];

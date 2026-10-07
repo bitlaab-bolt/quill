@@ -130,7 +130,7 @@ pub const CRUD = struct {
                 release(self.db.heap, result.?);
             },
             .pointer => |p| {
-                if (!(p.is_const and p.size == .slice)) {
+                if (!(p.attrs.@"const" and p.size == .slice)) {
                     @compileError("quill: Pointer type must be `[]const T`");
                 }
 
@@ -145,36 +145,42 @@ pub const CRUD = struct {
     }
 
     fn release(heap: Allocator, data: anytype) void {
-        const info = @typeInfo(@TypeOf(data)).@"struct";
+        const T = @TypeOf(data);
+        const info = @typeInfo(T).@"struct";
         const err_str = "quill: Pointer type must be `[]const T`";
 
-        inline for (info.fields) |field| {
-            const value = @field(data, field.name);
-            switch (@typeInfo(field.type)) {
-                .@"struct" => try jsonic.free(heap, value),
+        inline for (info.field_names) |f_name| {
+            const FT = @FieldType(T, f_name);
+            const value = @field(data, f_name);
+
+            switch (@typeInfo(FT)) {
+                .@"struct" => jsonic.free(heap, value),
                 .optional => |o| {
-                    switch(@typeInfo(o.child)) {
-                        .@"struct" => if (value) |v| try jsonic.free(heap, v),
+                    switch (@typeInfo(o.child)) {
+                        .@"struct" => if (value) |v| jsonic.free(heap, v),
                         .pointer => |p| {
-                            if (!(p.is_const and p.size == .slice)) {
+                            if (!(p.attrs.@"const" and p.size == .slice)) {
                                 @compileError(err_str);
                             }
 
-                            if (p.child == u8) { if (value) |v| heap.free(v); }
-                            else { if (value) |v| try jsonic.free(heap, v); }
+                            if (p.child == u8) {
+                                if (value) |v| heap.free(v);
+                            } else {
+                                if (value) |v| jsonic.free(heap, v);
+                            }
                         },
-                        else => {} // NOP
+                        else => {}, // NOP
                     }
                 },
                 .pointer => |p| {
-                    if (!(p.is_const and p.size == .slice)) {
+                    if (!(p.attrs.@"const" and p.size == .slice)) {
                         @compileError(err_str);
                     }
 
                     if (p.child == u8) heap.free(value)
-                    else try jsonic.free(heap, value);
+                    else jsonic.free(heap, value);
                 },
-                else => {} // NOP
+                else => {} // NO-OP
             }
         }
     }
@@ -212,7 +218,7 @@ pub const CRUD = struct {
             try types.bindFilterData(&params, filter);
         }
 
-        var records = ArrayList(T){};
+        var records: ArrayList(T) = .empty;
         while (try sqlite3.step(self.stmt) == .Row) {
             var column = sqlite3.Column.init(heap, self.stmt);
             try records.append(heap, try types.convertTo(heap, &column, T));
@@ -256,7 +262,7 @@ pub const CRUD = struct {
             try types.bindFilterData(&params, filter);
         }
 
-        var list = ArrayList([]const u8){};
+        var list: ArrayList([]const u8) = .empty;
         defer {
             for (list.items) |item| heap.free(item);
             list.deinit(heap);

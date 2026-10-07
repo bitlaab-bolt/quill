@@ -6,16 +6,16 @@ Quill is an opinionated SQLite wrapper, focuses on performance and code efficien
 
 ## Platform Support
 
-Quill compiles SQLite's C `amalgamation` files, thus has cross-platform support.
+Compiles SQLite from its C amalgamation, so it is fully cross-platform.
 
 ## Dependency
 
 Quill has the following external dependency:
 
-- [Jsonic](https://bitlaabjsonic.web.app/)
+- [Jsonic](https://bitlaab.com/api-doc?pkg=jsonic)
 
-No additional step is required to use this project as a package dependency.
+No additional steps are required to use this project as a package dependency.
 
 ## Documentation
 
-For most up-to-date documentation see - [**Quill Documentation**](https://bitlaabquill.web.app/).
+For most up-to-date documentation see - [**Quill Documentation**](https://bitlaab.com/api-doc?pkg=quill).

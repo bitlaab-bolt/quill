@@ -93,7 +93,7 @@ pub const DataType = struct {
     }
 
     fn constSlice(ptr: Type.Pointer) void {
-        if (!(ptr.is_const and ptr.size == .slice)) {
+        if (!(ptr.attrs.@"const" and ptr.size == .slice)) {
             const fmt_str = "quill: Pointer Type `{s}` Must be `[]const T`";
             @compileError(ctPrint(fmt_str, .{@typeName(ptr.child)}));
         }
@@ -191,14 +191,14 @@ pub fn convertFrom(
         @compileError(ctPrint(fmt_str, .{@typeName(record)}));
     }
 
-    inline for (info.@"struct".fields) |field| {
-        const pos = try bind.parameterIndex(":" ++ field.name);
-        const value = @field(record, field.name);
+    inline for (info.@"struct".field_names) |f_name| {
+        const pos = try bind.parameterIndex(":" ++ f_name);
+        const value = @field(record, f_name);
 
-        switch (@typeInfo(field.type)) {
-            .optional => |_| {
-                if (value == null) try bind.none(pos)
-                else try typeCast(heap, bind, pos, value.?, list);
+        switch (@typeInfo(@FieldType(@TypeOf(record), f_name))) {
+            .optional => {
+                if (value) |v| try typeCast(heap, bind, pos, v, list)
+                else try bind.none(pos);
             },
             else => try typeCast(heap, bind, pos, value, list)
         }
@@ -220,8 +220,8 @@ fn typeCast(
 
     switch (@typeInfo(T)) {
         .@"struct" => |s| {
-            comptime debug.assert(s.fields.len == 1);
-            const child = @field(value, s.fields[0].name);
+            comptime debug.assert(s.field_names.len == 1);
+            const child = @field(value, s.field_names[0]);
             const info = @typeInfo(@TypeOf(child));
 
             switch (info) {
@@ -302,23 +302,25 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     }
 
     var dest: T = undefined;
-    const fields = info.@"struct".fields;
+    const field_names = info.@"struct".field_names;
 
     for (0..@as(usize, @intCast(col.count()))) |index| {
         const i: i32 = @intCast(index);
-        inline for (fields) |field| {
-            if (mem.eql(u8, col.name(i), field.name[0..])) {
-                switch (@typeInfo(field.type)) {
+        const col_name = col.name(i);
+
+        inline for (field_names) |f_name| {
+            if (mem.eql(u8, col_name, f_name)) {
+                const FT = @FieldType(T, f_name);
+
+                switch (@typeInfo(FT)) {
                     .optional => |o| {
                         if (col.dataType(i) == .Null) {
-                            @field(dest, field.name) = null;
+                            @field(dest, f_name) = null;
                         } else {
-                            try typeConversion(heap, col, i, &dest, o.child, field.name);
+                            try typeConversion(heap, col, i, &dest, o.child, f_name);
                         }
                     },
-                    else => {
-                        try typeConversion(heap, col, i, &dest, field.type, field.name);
-                    }
+                    else => try typeConversion(heap, col, i, &dest, FT, f_name),
                 }
             }
         }
@@ -392,9 +394,9 @@ fn typeConversion(
                 defer heap.free(variant);
                 errdefer heap.free(variant);
 
-                inline for (@typeInfo(T).@"enum".fields) |field| {
-                    if (mem.eql(u8, field.name, variant)) {
-                        @field(rec, tag) = @field(T, field.name);
+                inline for (@typeInfo(T).@"enum".field_names) |f_name| {
+                    if (mem.eql(u8, f_name, variant)) {
+                        @field(rec, tag) = @field(T, f_name);
                         return;
                     }
                 }

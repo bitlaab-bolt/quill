@@ -23,6 +23,14 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
+## [v1.2.0] - 2026-10-07
+
+Internal code refactoring, better documentation, and Zig-0.17.0 version support.
+
+### Changed
+
+- `Stencil.init()` now takes an additional `Io` as argument.
+
 ## [v1.1.0] - 2026-02-22
 
 Upgrading `Jsonic` to version 1.5.0 and Adding build flag for `SQLite JSON` manipulation.

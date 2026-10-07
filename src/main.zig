@@ -62,14 +62,12 @@ pub const ModelProfile = struct {
     age2: ?Dt.Int,
 };
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     std.debug.print("Code coverage examples\n", .{});
 
     // Let's start from here...
 
-    var gpa_mem = std.heap.DebugAllocator(.{}).init;
-    defer std.debug.assert(gpa_mem.deinit() == .ok);
-    const heap = gpa_mem.allocator();
+    const heap = init.gpa;
 
     try Quill.init(.Serialized);
     defer Quill.deinit();
@@ -107,7 +105,7 @@ pub fn main() !void {
         const soc = Social { .website = "example.one", .username = name };
 
         const record_data = Model {
-            .uuid = .{.blob = &Uuid.new()},
+            .uuid = .{.blob = &(try Uuid.new())},
             .name1 = .{.text = name},
             .name2 = null,
             .balance1 = 10.50,

@@ -11,7 +11,6 @@ const std = @import("std");
 const fmt = std.fmt;
 const mem = std.mem;
 const time = std.time;
-const crypto = std.crypto;
 const testing = std.testing;
 
 
@@ -46,22 +45,19 @@ const URN = [36]u8;
 // |+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+|
 
 /// # Creates a New UUID-v7
-pub fn new() UUID {
+pub fn new() !UUID {
+    // Private, per-call Io: no globals, nothing shared between threads
+    var threaded: std.Io.Threaded = .init_single_threaded;
+    const io = threaded.io();
+
     var uuid: UUID = undefined;
+    try io.randomSecure(uuid[6..]);
 
-    // Fills the tailing 10 bytes
-    crypto.random.bytes(uuid[6..]);
-
-    // Gets timestamp in milliseconds since Epoch
-    const timestamp: u48 = @intCast(time.milliTimestamp());
-
-    // Ensures timestamp in Big-Endian format
+    const timestamp: u48 = @intCast(std.Io.Clock.real.now(io).toMilliseconds());
     mem.writeInt(u48, uuid[0..6], timestamp, .big);
 
-    // Sets the version and variant
     uuid[6] = (uuid[6] & 0x0F) | 0x70;
     uuid[8] = (uuid[8] & 0x3F) | 0x80;
-
     return uuid;
 }
 
