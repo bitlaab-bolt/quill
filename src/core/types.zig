@@ -306,7 +306,7 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
     var dest: T = undefined;
     const field_names = info.@"struct".field_names;
 
-    for (0..@as(usize, @intCast(col.count()))) |index| {
+    columns: for (0..@as(usize, @intCast(col.count()))) |index| {
         const i: i32 = @intCast(index);
         const col_name = col.name(i);
 
@@ -324,6 +324,8 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
                     },
                     else => try typeConversion(heap, col, i, &dest, FT, f_name),
                 }
+
+                continue :columns;
             }
         }
     }

@@ -102,37 +102,26 @@ pub fn exec(heap: Allocator, db: Database, sql: Str) !ExecResult {
 pub const ExecResult = struct {
     const Column = struct { name: Str, data: Str };
 
-    heap: Allocator,
+    arena: std.heap.ArenaAllocator,
     offset: usize = 0,
     result: ArrayList([]ExecResult.Column),
+    /// Column names are identical for every row: copied only once
+    names: ?[]Str = null,
 
     fn create(heap: Allocator) ExecResult {
         return .{
-            .heap = heap,
+            .arena = std.heap.ArenaAllocator.init(heap),
             .result = .empty
         };
     }
 
     fn add(self: *ExecResult, columns: []ExecResult.Column) !void {
-        try self.result.append(self.heap, columns);
+        try self.result.append(self.arena.allocator(), columns);
     }
 
     /// # Releases Allocated Resources
     pub fn destroy(self: *ExecResult) void {
-        const heap = self.heap;
-
-        for (self.result.items) |item| {
-            var i: usize = 0;
-            while (i < item.len) : (i += 1) {
-                const column = item[i];
-                heap.free(column.name);
-                heap.free(column.data);
-            }
-
-            heap.free(item);
-        }
-
-        self.result.deinit(self.heap);
+        self.arena.deinit();
     }
 
     /// # Counts Number of Retrieved Records
@@ -173,31 +162,29 @@ pub const ExecResult = struct {
     ) !void {
         // Iterate by the exact column count: the NULL terminator cannot be
         // used as a delimiter because SQLite passes NULL for SQL NULL values
-        var list: ArrayList(ExecResult.Column) = .empty;
+        const arena = result.arena.allocator();
+        const n: usize = @intCast(n_col);
 
-        const heap = result.heap;
+        // Column names are identical for every retrieved row: the first
+        // callback copies them once, remaining rows reuse the copies
+        const names = result.names orelse blk: {
+            const copied = try arena.alloc(Str, n);
 
-        var i: usize = 0;
-        while (i < @as(usize, @intCast(n_col))) : (i += 1) {
-            const name: Str = mem.span(cn[i]);
+            for (copied, 0..) |*slot, i| {
+                slot.* = try arena.dupe(u8, mem.span(cn[i]));
+            }
+
+            result.names = copied;
+            break :blk copied;
+        };
+
+        const row = try arena.alloc(ExecResult.Column, n);
+        for (row, 0..) |*field, i| {
             const data: Str = if (ct[i] == null) "" else mem.span(ct[i]);
-            try list.append(heap, try makeColumn(heap, name, data));
-
+            field.* = .{ .name = names[i], .data = try arena.dupe(u8, data) };
         }
 
-        try result.add(try list.toOwnedSlice(heap));
-    }
-
-    /// # Makes a Heap Allocated Column
-    /// **WARNING:** Allocated memory must be freed by the caller
-    fn makeColumn(heap: Allocator, name: Str, data: Str) !ExecResult.Column {
-        const alloc_name = try heap.alloc(u8, name.len);
-        mem.copyForwards(u8, alloc_name, name);
-
-        const alloc_data = try heap.alloc(u8, data.len);
-        mem.copyForwards(u8, alloc_data, data);
-
-        return .{.name = alloc_name, .data = alloc_data };
+        try result.add(row);
     }
 };
 
@@ -253,10 +240,7 @@ pub const Bind = struct {
 
         if (name == null) return null;
 
-        const tmp = mem.span(name);
-        const data = try self.heap.alloc(u8, tmp.len);
-        mem.copyForwards(u8, data, tmp);
-        return data;
+        return try self.heap.dupe(u8, mem.span(name));
     }
 
     /// # Binds **NULL** to Column Data
@@ -286,6 +270,8 @@ pub const Bind = struct {
         if (rv != 0) return @"error"(rv);
     }
 
+    /// # Binds Text Data to a Column
+    /// **WARNING:** `data` must outlive the statement execution `SQLITE_STATIC`
     pub fn text(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
@@ -296,6 +282,8 @@ pub const Bind = struct {
         if (rv != 0) return @"error"(rv);
     }
 
+    /// # Binds Blob Data to a Column
+    /// **WARNING:** `data` must outlive the statement execution `SQLITE_STATIC`
     pub fn blob(self: *Bind, index: i32, data: Str) !void {
         const pos: c_int = @intCast(index);
         const len: c_int = @intCast(data.len);
@@ -344,7 +332,7 @@ pub fn finalize(stmt: STMT) !void {
 }
 
 pub fn changes64(db: Database) i64 {
-    return @as(i64, sqlite3.sqlite3_changes64(db));
+    return @intCast(sqlite3.sqlite3_changes64(db));
 }
 
 pub fn errMsg(db: Database) Str {
@@ -457,10 +445,7 @@ pub const Column = struct {
 
         if (result == null) return null;
 
-        const tmp = mem.span(result);
-        const data = try self.heap.alloc(u8, tmp.len);
-        mem.copyForwards(u8, data, tmp);
-        return data;
+        return try self.heap.dupe(u8, mem.span(result));
     }
 
     /// - **WARNING:** Returned value must be freed by the caller
@@ -472,10 +457,7 @@ pub const Column = struct {
         if (result == null) return null;
 
         const tmp_ptr: [*]const u8 = @ptrCast(result);
-        const tmp = tmp_ptr[0..@as(usize, @intCast(len))];
-        const data = try self.heap.alloc(u8, tmp.len);
-        mem.copyForwards(u8, data, tmp);
-        return data;
+        return try self.heap.dupe(u8, tmp_ptr[0..@as(usize, @intCast(len))]);
     }
 };
 

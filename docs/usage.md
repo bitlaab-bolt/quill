@@ -15,12 +15,15 @@ const Quill = quill.Quill;
 const Qb = quill.QueryBuilder;
 ```
 
-Initialize the General Propose Allocator (GPA) within the `main` function.
+Initialize the General Purpose Allocator (GPA) within the `main` function. The Zig runtime provides both the allocator and the `Io` handle through `std.process.Init` - the `Io` handle is required by utility modules such as `Uuid` and `DateTime`.
 
 ```zig
-var gpa_mem = std.heap.DebugAllocator(.{}).init;
-defer std.debug.assert(gpa_mem.deinit() == .ok);
-const heap = gpa_mem.allocator();
+pub fn main(init: std.process.Init) !void {
+    const heap = init.gpa;
+    const io = init.io;
+
+    // ...
+}
 ```
 
 ## Initial Setup
@@ -153,7 +156,7 @@ defer heap.destroy(soc_dyn);
 const soc = Social { .website = "example.one", .username = name };
 
 const record_data = Model {
-    .uuid = .{.blob = &(try Uuid.new())},
+    .uuid = .{.blob = &(try Uuid.new(io))},
     .name1 = .{.text = name},
     .name2 = null,
     .balance1 = 10.50,
@@ -483,17 +486,20 @@ const DateTime = quill.DateTime;
 
 Provides an Universally Unique IDentifier module for managing primary keys.
 
+**Remarks:** The `io` argument is the `std.Io` handle captured from
+`std.process.Init` (see [How to use](/usage)).
+
 Create a new slice of UUID v7.
 
 ```zig
-const id = try Uuid.new();
+const id = try Uuid.new(io);
 std.debug.print("{any}\n", .{id});
 ```
 
 Create an URN (Uniform Resource Name) string from a given UUID slice.
 
 ```zig
-const id = try Uuid.new();
+const id = try Uuid.new(io);
 const id_urn = try Uuid.toUrn(&id);
 std.debug.print("URN: {s}\n", .{id_urn});
 ```
@@ -509,15 +515,16 @@ std.debug.print("{any}\n", .{id});
 ### Timestamp
 
 Provides the current Epoch timestamp. Needed for record's timekeeping.
+The `io` argument is the `std.Io` handle from `std.process.Init`.
 
 ```zig
-const ts = DateTime.timestamp();
+const ts = DateTime.timestamp(io);
 std.debug.print("Current Timestamp: {d}\n", .{ts});
 ```
 
 Following example returns the timestamp in millisecond.
 
 ```zig
-const ts_ms = DateTime.msTimestamp();
+const ts_ms = DateTime.msTimestamp(io);
 std.debug.print("Current Timestamp: {d} ms\n", .{ts_ms});
 ```

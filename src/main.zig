@@ -145,8 +145,8 @@ pub fn main(init: std.process.Init) !void {
     var db = try Quill.open(heap, "hello.db", .All);
     defer db.close();
 
-    const john_uuid = try Uuid.new();
-    const blob_uuid = try Uuid.new();
+    const john_uuid = try Uuid.new(init.io);
+    const blob_uuid = try Uuid.new(init.io);
 
     // Removes leftovers from a previous run, keeps the demo re-runnable
     {
@@ -251,9 +251,11 @@ pub fn main(init: std.process.Init) !void {
             break :blk sql.statement();
         };
 
-        const social = Social {.website = "example.two", .username = "Jane Doe"};
+        const social = Social {
+            .website = "example.two", .username = "Jane Doe"
+        };
         const socials = [_]Social{social};
-        const jane_uuid = try Uuid.new();
+        const jane_uuid = try Uuid.new(init.io);
 
         const record_data = userRecord(&jane_uuid, "Jane Doe", 25, social, &socials);
 
@@ -674,14 +676,19 @@ pub fn main(init: std.process.Init) !void {
     {
         section("Miscellaneous");
 
-        const id = try Uuid.new();
+        const id = try Uuid.new(init.io);
         const urn = try Uuid.toUrn(&id);
         std.debug.print("UUID URN: {s}\n", .{urn});
 
         const roundtrip = try Uuid.fromUrn(&urn);
         std.debug.print("Roundtrip OK: {}\n", .{std.mem.eql(u8, &id, &roundtrip)});
 
-        std.debug.print("Timestamp: {d} seconds\n", .{DateTime.timestamp()});
-        std.debug.print("Timestamp: {d} ms\n", .{DateTime.msTimestamp()});
+        std.debug.print("Timestamp: {d} seconds\n", .{
+            DateTime.timestamp(init.io)
+        });
+
+        std.debug.print("Timestamp: {d} ms\n", .{
+            DateTime.msTimestamp(init.io)
+        });
     }
 }

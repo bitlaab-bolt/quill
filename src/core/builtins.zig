@@ -10,6 +10,7 @@ const Allocator = mem.Allocator;
 
 const quill = @import("./quill.zig");
 const builder = @import("./builder.zig");
+const sqlite3 = @import("../binding/sqlite3.zig");
 
 const Str = []const u8;
 const Error = error { FailedIntegrityChecks };
@@ -26,11 +27,16 @@ fn run(db: *quill, sql: Str) !void {
 /// # Returns a Single Integer Value from a PRAGMA Statement
 /// **Remarks:** Intended for internal use only
 fn queryInt(db: *quill, comptime name: Str, comptime T: type) !T {
-    var result = try db.exec("PRAGMA " ++ name ++ ";");
-    defer result.destroy();
+    var crud = try db.prepare("PRAGMA " ++ name ++ ";");
+    defer crud.destroy();
 
-    const res = result.next().?[0];
-    return try fmt.parseInt(T, res.data, 10);
+    const result = try sqlite3.step(crud.stmt);
+    debug.assert(result == .Row);
+
+    const column = sqlite3.Column.init(db.heap, crud.stmt);
+    debug.assert(column.dataType(0) == .Int);
+
+    return @intCast(column.int64(0));
 }
 
 /// # Contains Index Related Functionalities

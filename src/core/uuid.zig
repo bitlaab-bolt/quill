@@ -8,6 +8,7 @@
 //! - Time-Ordered (Better Indexing & Query Performance)
 
 const std = @import("std");
+const Io = std.Io;
 const fmt = std.fmt;
 const mem = std.mem;
 const time = std.time;
@@ -45,11 +46,7 @@ const URN = [36]u8;
 // |+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+|
 
 /// # Creates a New UUID-v7
-pub fn new() !UUID {
-    // Private, per-call Io: no globals, nothing shared between threads
-    var threaded: std.Io.Threaded = .init_single_threaded;
-    const io = threaded.io();
-
+pub fn new(io: Io) !UUID {
     var uuid: UUID = undefined;
     try io.randomSecure(uuid[6..]);
 
