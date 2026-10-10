@@ -316,6 +316,13 @@ pub fn step(stmt: STMT) Error!Result {
     };
 }
 
+/// # Checks Whether a Statement is Mid-Execution
+/// - **true** when stepped at least once and not yet run to completion
+/// - **false** when fresh, after completion, or after `reset()`
+pub fn stmtBusy(stmt: STMT) bool {
+    return sqlite3.sqlite3_stmt_busy(stmt) != 0;
+}
+
 pub fn clearBinding(stmt: STMT) !void {
     const rv = sqlite3.sqlite3_clear_bindings(stmt);
     if (rv != 0) return @"error"(rv);

@@ -31,9 +31,10 @@ Internal code refactoring, better documentation, and Zig-0.17.0 version support.
 - Statement reuse interface on the `CRUD` module: `reset()` (backed by
   `sqlite3_reset()` and `sqlite3_clear_bindings()`) releases a compiled
   statement for re-execution without the `prepare()` recompilation cost
-- Automatic statement reset before every CRUD operation, so a single
+- Automatic statement reset before every CRUD execution, so a single
   `prepare()` call can be reused across repeated `exec`, `readOne`,
-  `readMany`, `count` and `remove` calls
+  `readMany`, `count` and `remove` calls. Mid-scan statements are left
+  untouched, preserving progressive `readOne()` retrieval loops
 - `test` build step covering the unit tests
 
 ### Changed

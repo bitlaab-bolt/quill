@@ -143,11 +143,14 @@ pub const CRUD = struct {
         try sqlite3.clearBinding(self.stmt);
     }
 
-    /// # Resets the Statement Ignoring Previous Execution Errors
-    /// **Remarks:** Intended for internal use only. `sqlite3_reset()` reports
-    /// the most recent step failure, which was already surfaced to the
-    /// caller - swallowing it here keeps statement reuse frictionless.
+    /// # Resets the Statement when not Mid-Execution
+    /// **Remarks:** Intended for internal use only. Resetting prior execution
+    /// state allows a prepared statement to be reused without recompiling.
+    /// Mid-scan statements are left untouched, keeping progressive
+    /// `readOne()` loops advancing instead of rewinding to the first row.
     fn recycle(self: *CRUD) void {
+        if (sqlite3.stmtBusy(self.stmt)) return;
+
         sqlite3.reset(self.stmt) catch {};
         sqlite3.clearBinding(self.stmt) catch {};
     }
@@ -233,9 +236,12 @@ pub const CRUD = struct {
     }
 
     /// # Retrieves a Single (Record) Query Result
-    /// **Remarks:** For multiple records only the first one is retrieved
     /// - `T` - Record View structure
     /// - `filter` - **null**, Otherwise instance of an Filter structure
+    ///
+    /// **Remarks:** Repeated calls advance the statement cursor, supporting
+    /// progressive retrieval - a fresh execution begins only after the
+    /// previous scan has run to completion or `reset()` is called.
     ///
     /// **WARNING:** Result must be freed by calling `free()`
     pub fn readOne(self: *CRUD, comptime T: type, filter: anytype) !?T {
@@ -476,6 +482,31 @@ test "crud statement reuse" {
     const again = try query.readOne(View, Flt{ .name = "alice" });
     try testing.expect(again != null);
     query.free(again);
+
+    // Progressive reads step through rows without rewinding, and a
+    // completed scan restarts cleanly on the next call
+    var scan = try db.prepare("SELECT id, name FROM users ORDER BY rowid;");
+    defer scan.destroy();
+
+    for (0..2) |round| {
+        var names: [2][]const u8 = undefined;
+        var seen: usize = 0;
+
+        while (try scan.readOne(View, null)) |row| {
+            defer scan.free(row);
+
+            // Fails fast instead of hanging when the cursor rewinds
+            try testing.expect(seen < 2);
+            names[seen] = row.name;
+            seen += 1;
+        }
+
+        try testing.expectEqual(@as(usize, 2), seen);
+        try testing.expectEqualStrings("alice", names[0]);
+        try testing.expectEqualStrings("bob", names[1]);
+
+        if (round == 0) try scan.reset();
+    }
 
     var counter = try db.prepare("SELECT COUNT(*) FROM users;");
     defer counter.destroy();
