@@ -23,9 +23,18 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
-## [v1.2.0] - 2026-10-07
+## [v1.2.0] - 2026-10-10
 
 Internal code refactoring, better documentation, and Zig-0.17.0 version support.
+
+### Added
+- Statement reuse interface on the `CRUD` module: `reset()` (backed by
+  `sqlite3_reset()` and `sqlite3_clear_bindings()`) releases a compiled
+  statement for re-execution without the `prepare()` recompilation cost
+- Automatic statement reset before every CRUD operation, so a single
+  `prepare()` call can be reused across repeated `exec`, `readOne`,
+  `readMany`, `count` and `remove` calls
+- `test` build step covering the unit tests
 
 ### Changed
 

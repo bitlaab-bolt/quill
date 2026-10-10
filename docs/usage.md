@@ -417,6 +417,24 @@ defer crud.destroy();
 try crud.remove(filter, resultCallback);
 ```
 
+### Reusing a Prepared Statement
+
+SQLite compiles SQL text into byte-code on every `prepare()` call. When the same statement runs repeatedly, keep the `CRUD` interface alive and re-run its operations instead of destroying it - every operation resets the compiled statement automatically, skipping the recompilation cost.
+
+```zig
+var crud = try db.prepare(sql);
+defer crud.destroy();
+
+const names = [_][]const u8 { "John Doe", "Jane Doe" };
+
+for (names) |name| {
+    const filter = FilterUser { .name1 = name, .age1 = 31 };
+    try crud.remove(filter, resultCallback);
+}
+```
+
+**Remarks:** A reused statement must always originate from identical SQL text. Calling `crud.reset()` manually releases the statement between raw `step()` invocations when needed.
+
 ## ACID Session
 
 ACID Session provides a SQLite transaction, to group one or more SQL statements into a single unit of work that is executed atomically — meaning all or nothing.
