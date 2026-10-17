@@ -84,8 +84,10 @@ pub fn fromUrn(str: []const u8) Error!UUID {
     var i: usize = 0;
     var j: usize = 0;
 
+    // Hyphens only occur at the validated positions, so any `-` elsewhere
+    // is rejected by `hexToByte` instead of being silently skipped
     while (i < str.len) {
-        if (str[i] == '-') { i += 1; continue; }
+        if (i == 8 or i == 13 or i == 18 or i == 23) { i += 1; continue; }
         uuid[j] = (try hexToByte(str[i]) << 4) | try hexToByte(str[i + 1]);
         i += 2;
         j += 1;
@@ -126,4 +128,27 @@ test "urn full circle" {
     const urn_delta = try toUrn(&uuid);
 
     try std.testing.expectEqualStrings(urn, &urn_delta);
+}
+
+test "urn lowercase" {
+    const upper = "0194E617-250F-7191-9AA5-96B3F506C20B";
+    const lower = "0194e617-250f-7191-9aa5-96b3f506c20b";
+
+    try std.testing.expectEqual(try fromUrn(upper), try fromUrn(lower));
+}
+
+test "urn malformed" {
+    // Extra hyphen misaligns pairing -> previously OOB read / undefined byte
+    try testing.expectError(
+        Error.InvalidHexCharacter, fromUrn("0194E617-250F-7191-9AA5-96B3F506-20B")
+    );
+    try testing.expectError(
+        Error.InvalidHexCharacter, fromUrn("0194E617-250F-7191-9AA5-96B3F506C2--")
+    );
+    try testing.expectError(
+        Error.InvalidHexCharacter, fromUrn("0194E617-250F-71g1-9AA5-96B3F506C20B")
+    );
+    try testing.expectError(Error.InvalidLength, toUrn("0123456789abcde"));
+    try testing.expectError(Error.MalformedUrnString, fromUrn("0194E617-250F-7191-9AA5-96B3F506C20B."));
+    try testing.expectError(Error.MalformedUrnString, fromUrn("0194E617:250F:7191:9AA5:96B3F506C20B"));
 }
