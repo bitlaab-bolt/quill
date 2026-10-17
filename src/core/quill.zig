@@ -17,7 +17,6 @@ const STMT = sqlite3.STMT;
 const Blob = sqlite3.Blob;
 const Flag = sqlite3.OpenFlag;
 const Option = sqlite3.Option;
-const Database = sqlite3.Database;
 const BlobOption = sqlite3.BlobOption;
 const ExecResult = sqlite3.ExecResult;
 

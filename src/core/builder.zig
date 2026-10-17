@@ -7,8 +7,6 @@ const fmt = std.fmt;
 const mem = std.mem;
 const testing = std.testing;
 
-const Dt = @import("./types.zig").DataType;
-
 
 const Str = []const u8;
 const ctPrint = fmt.comptimePrint;
