@@ -246,7 +246,10 @@ fn typeCast(
                 .@"struct" => {
                     if (@hasField(T, "text")) {
                         const out = try Json.stringify(heap, child);
-                        try list.append(heap, out);
+                        list.append(heap, out) catch |err| {
+                            heap.free(out);
+                            return err;
+                        };
                         try bind.text(i, out);
                     } else {
                         @compileError(ctPrint(err_str1, .{@typeName(T)}));
@@ -259,7 +262,10 @@ fn typeCast(
                         if (p.child == u8) try bind.text(i, child)
                         else {
                             const out = try Json.stringify(heap, child);
-                            try list.append(heap, out);
+                            list.append(heap, out) catch |err| {
+                                heap.free(out);
+                                return err;
+                            };
                             try bind.text(i, out);
                         }
                     } else if (@hasField(T, "blob")) {
@@ -294,6 +300,38 @@ fn typeCast(
     }
 }
 
+/// # Frees Heap Allocated Memories of a Converted Field Value
+/// **Remarks:** Intended for internal use only
+pub fn freeValue(heap: Allocator, data: anytype) void {
+    const T = @TypeOf(data);
+
+    switch (@typeInfo(T)) {
+        .@"struct" => jsonic.free(heap, data),
+        .optional => |o| {
+            switch (@typeInfo(o.child)) {
+                .@"struct" => if (data) |v| jsonic.free(heap, v),
+                .pointer => |p| {
+                    DataType.constSlice(p);
+
+                    if (p.child == u8) {
+                        if (data) |v| heap.free(v);
+                    } else {
+                        if (data) |v| jsonic.free(heap, v);
+                    }
+                },
+                else => {}, // NO-OP
+            }
+        },
+        .pointer => |p| {
+            DataType.constSlice(p);
+
+            if (p.child == u8) heap.free(data)
+            else jsonic.free(heap, data);
+        },
+        else => {}, // NO-OP
+    }
+}
+
 /// # Converts Field Data into the Given Record Structure
 /// **Remarks:** Intended for internal use only
 pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
@@ -305,12 +343,20 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
 
     var dest: T = undefined;
     const field_names = info.@"struct".field_names;
+    // Tracks field coverage: unmatched fields would otherwise stay `undefined`
+    var matched: [field_names.len]bool = undefined;
+    @memset(&matched, false);
+
+    // Frees already converted fields when conversion fails mid-row
+    errdefer inline for (field_names, 0..) |f_name, f_index| {
+        if (matched[f_index]) freeValue(heap, @field(dest, f_name));
+    };
 
     columns: for (0..@as(usize, @intCast(col.count()))) |index| {
         const i: i32 = @intCast(index);
         const col_name = col.name(i);
 
-        inline for (field_names) |f_name| {
+        inline for (field_names, 0..) |f_name, f_index| {
             if (mem.eql(u8, col_name, f_name)) {
                 const FT = @FieldType(T, f_name);
 
@@ -325,9 +371,16 @@ pub fn convertTo(heap: Allocator, col: *Column, comptime T: type) !T {
                     else => try typeConversion(heap, col, i, &dest, FT, f_name),
                 }
 
+                // Marked after conversion: failed conversions leave the
+                // field untouched, so it must not be freed on rollback
+                matched[f_index] = true;
                 continue :columns;
             }
         }
+    }
+
+    for (matched) |is_matched| {
+        if (!is_matched) return Error.MismatchedFields;
     }
 
     return dest;

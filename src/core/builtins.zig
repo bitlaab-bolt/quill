@@ -174,10 +174,10 @@ pub const Container = struct {
         try run(db, sql);
     }
 
-    /// # Renames a Container
-    /// - `to` - Current container name e.g., `users`, `accounts` etc.
+    /// # Adds a New Field to an Existing Container
+    /// - `to` - Container name e.g., `users`, `accounts` etc.
     /// - `name` - New field name e.g., `fullname`, `phone_number` etc.
-    /// - `@"type" - Data type of the new field e.g., `.Int`
+    /// - `@"type" - Data type of the new field e.g., `.INTEGER`
     /// - `opt` - New field option e.g., `.{.Null}` or `.{.NotNull = "20"}`
     ///
     /// **Remarks:** For default `TEXT` data use e.g., `.{.NotNull = "'John'"}`
@@ -250,8 +250,8 @@ pub const Container = struct {
             std.log.err("{s}\n", .{@errorName(err)});
         };
 
-        _ = try db.exec(new_table);
-        _ = try db.exec(copy_data);
+        try run(db, new_table);
+        try run(db, copy_data);
         try delete(db, from, .Retain);
         try rename(db, from ++ "_new", from);
 

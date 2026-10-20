@@ -489,7 +489,10 @@ try blob.write(data, offset);
 
 **Remarks:** Make sure the `.ReadWrite` permission is set on `open()`. Also,
 the given container must use an implicit `rowid` primary key (e.g.,
-`Qb.Container.create(Model, "users", .RowId)`), otherwise `open()` fails. 
+`Qb.Container.create(Model, "users", .RowId)`), otherwise `open()` fails.
+Writing on a read-only stream fails with `Locked`, an offset beyond the blob
+bounds fails with `InvalidOffset`, and an oversized buffer fails with
+`BufferIsTooLong`. 
 
 ## Miscellaneous
 

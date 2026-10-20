@@ -145,6 +145,11 @@ const sql = comptime blk: {
 std.debug.print("{s}\n", .{sql});
 ```
 
+**Remarks:** The query clauses must be chained in the following order —
+`dist()`, `when()`, `sort()`, `limit()`, `skip()`. The builder enforces this
+order (and duplicate calls) at compile-time. Also, `skip()` requires a
+preceding `limit()` clause, because SQLite rejects `OFFSET` without `LIMIT`.
+
 **Example 03:** Generate **SELECT DISTINCT** SQL statement.
 
 ```zig
@@ -181,8 +186,11 @@ pass `null` for everything else.
 | `.!null` | `field IS NOT NULL` |
 
 **Remarks:** For `.between`, `.in`, and `.!in` the filter field must be a list
-(`[]const Dt.Int` or `[]const Dt.Slice`) with a length matching the placeholder
-count. See [Data Types](/types) for the available filter field types.
+(`[]const Dt.Int` or `[]const Dt.Slice`) with a length **exactly** matching
+the placeholder count. A shorter list silently leaves the remaining
+placeholders bound to SQL `NULL` (records won't match), and a longer list
+fails binding with an error. The placeholder count for `.in` and `.!in` must
+be at least `1`. See [Data Types](/types) for the available filter field types.
 
 ### Count
 

@@ -182,43 +182,8 @@ pub const CRUD = struct {
     }
 
     fn release(heap: Allocator, data: anytype) void {
-        const T = @TypeOf(data);
-        const info = @typeInfo(T).@"struct";
-        const err_str = "@quill: Pointer type must be `[]const T`";
-
-        inline for (info.field_names) |f_name| {
-            const FT = @FieldType(T, f_name);
-            const value = @field(data, f_name);
-
-            switch (@typeInfo(FT)) {
-                .@"struct" => jsonic.free(heap, value),
-                .optional => |o| {
-                    switch (@typeInfo(o.child)) {
-                        .@"struct" => if (value) |v| jsonic.free(heap, v),
-                        .pointer => |p| {
-                            if (!(p.attrs.@"const" and p.size == .slice)) {
-                                @compileError(err_str);
-                            }
-
-                            if (p.child == u8) {
-                                if (value) |v| heap.free(v);
-                            } else {
-                                if (value) |v| jsonic.free(heap, v);
-                            }
-                        },
-                        else => {}, // NOP
-                    }
-                },
-                .pointer => |p| {
-                    if (!(p.attrs.@"const" and p.size == .slice)) {
-                        @compileError(err_str);
-                    }
-
-                    if (p.child == u8) heap.free(value)
-                    else jsonic.free(heap, value);
-                },
-                else => {} // NO-OP
-            }
+        inline for (@typeInfo(@TypeOf(data)).@"struct".field_names) |f_name| {
+            types.freeValue(heap, @field(data, f_name));
         }
     }
 
@@ -226,11 +191,18 @@ pub const CRUD = struct {
     /// **Remarks:** Intended for internal use only. Resetting prior execution
     /// state allows a prepared statement to be reused without recompiling.
     fn bindFilter(self: *CRUD, filter: anytype) !void {
-        self.recycle();
-
         if (@TypeOf(filter) != @TypeOf(null)) {
+            // Binding new parameters requires a fresh statement — SQLite
+            // refuses to bind to a mid-scan statement, so a filtered read
+            // must always reset first, even when the statement is busy.
+            // Unfiltered reads keep progressive cursor state via `recycle()`
+            try sqlite3.reset(self.stmt);
+            try sqlite3.clearBinding(self.stmt);
+
             var params = sqlite3.Bind.init(self.db.heap, self.stmt);
             try types.bindFilterData(&params, filter);
+        } else {
+            self.recycle();
         }
     }
 
@@ -266,6 +238,12 @@ pub const CRUD = struct {
         var records: ArrayList(T) = .empty;
         // Pre-allocates a small chunk to reduce repeated growth reallocations
         try records.ensureTotalCapacity(heap, 16);
+        // Frees partially converted records when conversion fails mid-scan
+        errdefer {
+            for (records.items) |item| release(heap, item);
+            records.deinit(heap);
+        }
+
         while (try sqlite3.step(self.stmt) == .Row) {
             var column = sqlite3.Column.init(heap, self.stmt);
             try records.append(heap, try types.convertTo(heap, &column, T));
@@ -363,12 +341,13 @@ pub const AcidSession = struct {
 
 /// # Provides Stream Interface for SQLite Blob Data
 pub const BlobStream = struct {
-    const Error = error { BufferIsTooLong };
+    const Error = error { InvalidOffset, BufferIsTooLong, Locked };
 
     db: *Self,
     blob: Blob,
     length: usize,
     cursor: usize = 0,
+    writable: bool,
 
     /// # Opens a Stream Interface
     /// - `container` - Container name e.g., `users`, `accounts` etc.
@@ -388,7 +367,7 @@ pub const BlobStream = struct {
         const handle = try sqlite3.blobOpen(dbi, container, field, rowid, opt);
         const length: usize = @intCast(sqlite3.blobBytes(handle));
 
-        return .{.db = db, .blob = handle, .length = length};
+        return .{.db = db, .blob = handle, .length = length, .writable = opt == .ReadWrite};
     }
 
     /// # Closes the Stream Interface
@@ -419,8 +398,13 @@ pub const BlobStream = struct {
     ///
     /// - `buff` - Buffer data to be overwritten on the record.
     /// - `offset` - Offset position to start writing the data.
+    ///
+    /// **Remarks:** Writing beyond the blob bounds returns **InvalidOffset**,
+    /// and an oversized buffer returns **BufferIsTooLong**.
     pub fn write(self: *BlobStream, buff: []const u8, offset: usize) !void {
-        debug.assert(offset < self.length);
+        if (!self.writable) return Error.Locked;
+        if (offset >= self.length) return Error.InvalidOffset;
+
         const available = self.length - offset;
 
         if (available < buff.len) return Error.BufferIsTooLong;
@@ -447,7 +431,7 @@ test "crud statement reuse" {
     var db = try Self.open(heap, null, .All);
     defer db.close();
 
-    var setup = try db.exec("CREATE TABLE users (id INTEGER, name TEXT);");
+    var setup = try db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);");
     defer setup.destroy();
 
     const Dt = types.DataType;
@@ -494,11 +478,14 @@ test "crud statement reuse" {
         while (try scan.readOne(View, null)) |row| {
             defer scan.free(row);
 
-            // Fails fast instead of hanging when the cursor rewinds
+            // Fails fast instead of hanging when the cursor rewinds.
+            // The row memory dies with `free()` — dupe before storing
             try testing.expect(seen < 2);
-            names[seen] = row.name;
+            names[seen] = try heap.dupe(u8, row.name);
             seen += 1;
         }
+
+        defer for (names[0..seen]) |item| heap.free(item);
 
         try testing.expectEqual(@as(usize, 2), seen);
         try testing.expectEqualStrings("alice", names[0]);

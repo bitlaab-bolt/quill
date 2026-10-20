@@ -310,6 +310,20 @@ pub fn main(init: std.process.Init) !void {
 
         try crud.exec(duplicate, null, null);
 
+        // `Replace` action: conflicting primary key overwrites the record
+        // (row count stays the same, field values are replaced)
+        const replace_sql = comptime blk: {
+            var stmt = Qb.Record.create(Model, "users", .Replace);
+            break :blk stmt.statement();
+        };
+
+        const replaced = userRecord(&john_uuid, "John Doe", 31, social, &socials);
+
+        var replace_crud = try db.prepare(replace_sql);
+        defer replace_crud.destroy();
+
+        try replace_crud.exec(replaced, null, resultCallback);
+
         try Quill.AcidSession.end(&db, .Commit, null);
         std.debug.print("ACID Session Committed\n", .{});
     }
@@ -325,6 +339,18 @@ pub fn main(init: std.process.Init) !void {
 
         var crud = try db.prepare(sql);
         defer crud.destroy();
+
+        // Records conversion rejects partial column coverage
+        {
+            var partial = try db.prepare("SELECT name1 FROM users;");
+            defer partial.destroy();
+
+            if (partial.readOne(View, null)) |_| {
+                std.debug.print("UNEXPECTED: partial select converted\n", .{});
+            } else |err| {
+                std.debug.print("Partial Select Error: {s}\n", .{@errorName(err)});
+            }
+        }
 
         const result = try crud.readOne(View, null);
         defer crud.free(result);

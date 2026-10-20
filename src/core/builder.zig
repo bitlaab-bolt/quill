@@ -18,6 +18,11 @@ fn requireStruct(T: type, comptime role: Str) void {
         const err_str = "@quill: Type of `{s}` Must be a " ++ role ++ " Structure";
         @compileError(ctPrint(err_str, .{@typeName(T)}));
     }
+
+    if (@typeInfo(T).@"struct".field_names.len == 0) {
+        const err_str = "@quill: " ++ role ++ " Structure `{s}` Must Have at Least One Field";
+        @compileError(ctPrint(err_str, .{@typeName(T)}));
+    }
 }
 
 /// # Verifies the Given Type is a Filter Structure
@@ -213,7 +218,9 @@ const Operator = enum {
                 return ctPrint(fmt_str, .{field, field, field});
             },
             .in, .@"!in" => {
-                if (len == null) @compileError("@quill: `len` can't be `null`");
+                if (len == null or len.? == 0) {
+                    @compileError("@quill: `len` Must be at Least 1 for `in` and `!in`");
+                }
 
                 comptime var params: Str = "";
                 for (1..len.? + 1) |i| {
@@ -452,6 +459,10 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **ORDER BY** clause
             pub fn sort(self: *Self, order:[]const OrderBy) void {
+                if (order.len == 0) {
+                    @compileError("@quill: `sort()` Requires at Least One Field");
+                }
+
                 self.seq.add(.OrderedBy) catch |err| {
                     const err_str = "@quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
@@ -499,6 +510,11 @@ pub const Record = struct {
             /// # Generates SQL Clause form Given Tokens
             /// - Generates **OFFSET** clause
             pub fn skip(self: *Self, num: u32) void {
+                // SQLite rejects `OFFSET` without a preceding `LIMIT` clause
+                if (self.seq.peek() != .Limit) {
+                    @compileError("@quill: `skip()` Requires a Preceding `limit()` Clause");
+                }
+
                 self.seq.add(.Offset) catch |err| {
                     const err_str = "@quill: Builder Function - {s}";
                     @compileError(ctPrint(err_str, .{@errorName(err)}));
@@ -729,6 +745,10 @@ const Common = struct {
     /// # Combines Multiple Token as SQL Group
     /// **Remarks:** Generic group function implementation
     pub fn group(tokens: []const Str) Str {
+        if (tokens.len == 0) {
+            @compileError("@quill: `group()` Requires at Least One Token");
+        }
+
         var clause: Str = "";
         for (tokens) |token| clause = clause ++ token ++ " ";
 
@@ -739,6 +759,10 @@ const Common = struct {
     /// # Generates SQL `WHERE` Statement form Given Tokens
     /// **Remarks:** Generic when function implementation
     pub fn when(self: anytype, tokens: []const Str) void {
+        if (tokens.len == 0) {
+            @compileError("@quill: `when()` Requires at Least One Token");
+        }
+
         self.seq.add(.Where) catch |err| {
             const err_str = "@quill: Builder Function - {s}";
             @compileError(ctPrint(err_str, .{@errorName(err)}));

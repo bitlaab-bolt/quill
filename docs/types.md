@@ -173,7 +173,7 @@ pub const View = struct {
     age: Dt.Int
 };
 
-pub const FilterId = struct { uuid: Dt.slice };
+pub const FilterId = struct { uuid: Dt.Slice };
 
 pub const FilterProfile = struct { balance: Dt.Int, age: []const Dt.Int };
 
