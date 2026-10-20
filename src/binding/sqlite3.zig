@@ -472,6 +472,7 @@ pub const Column = struct {
 fn @"error"(code: c_int) Error {
     return switch (code) {
         sqlite3.SQLITE_LOCKED => Error.Locked,
+        sqlite3.SQLITE_READONLY => Error.Locked,
         sqlite3.SQLITE_ERROR => Error.UnableToExecuteQuery,
         sqlite3.SQLITE_BUSY => Error.ConnectionIsBusy,
         sqlite3.SQLITE_CANTOPEN => Error.UnableToOpen,

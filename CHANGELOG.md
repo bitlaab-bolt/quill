@@ -23,7 +23,7 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item n
 
 
-## [v1.2.0] - 2026-10-10
+## [v1.2.0] - 2026-10-20
 
 Internal code refactoring, better documentation, and Zig-0.17.0 version support.
 

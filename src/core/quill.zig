@@ -511,3 +511,39 @@ test "crud statement reuse" {
     defer counter.destroy();
     try testing.expectEqual(@as(usize, 2), try counter.count(null));
 }
+
+test "blob stream rejects read-only writes and closes cleanly" {
+    try Self.init(.SingleThreaded);
+    defer Self.deinit();
+
+    const heap = testing.allocator;
+    var db = try Self.open(heap, null, .All);
+    defer db.close();
+
+    const Dt = types.DataType;
+    const View = struct { rowid: Dt.Int };
+
+    var setup = try db.exec("CREATE TABLE docs (data BLOB);");
+    defer setup.destroy();
+
+    var seed = try db.exec("INSERT INTO docs VALUES (zeroblob(8));");
+    defer seed.destroy();
+
+    var find = try db.prepare("SELECT rowid FROM docs;");
+    defer find.destroy();
+
+    const row = (try find.readOne(View, null)).?;
+    defer find.free(row);
+
+    // A read-only stream rejects writes with `Locked` (SQLITE_READONLY)
+    var viewer = try BlobStream.open(&db, "docs", "data", row.rowid, .Read);
+    try testing.expectError(error.Locked, viewer.write("ab", 0));
+
+    // The rejected write must not leave the stream unusable — the handle
+    // still reads the untouched data and closes without logging an error
+    var buffer: [8]u8 = undefined;
+    const data = (try viewer.read(&buffer)).?;
+    try testing.expectEqual(@as(usize, 8), data.len);
+    try testing.expectEqualSlices(u8, &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0 }, data);
+    viewer.close();
+}
