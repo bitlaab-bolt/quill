@@ -22,6 +22,7 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item 2
 - A short description for fixed item n
 
+
 ## [v1.2.2] - 2026-10-23
 
 Documentation correctness release for the Builtin Modules guide.
