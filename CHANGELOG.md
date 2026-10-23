@@ -22,6 +22,27 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item 2
 - A short description for fixed item n
 
+## [v1.2.1] - 2026-10-23
+
+Correctness release for reused statements and blob streams.
+
+### Fixed
+- Filtered `readOne()`, `readMany()`, `count()` and `exec()` now always
+  `reset()` the statement before binding — SQLite refuses to bind parameters
+  to a mid-scan statement (`SQLITE_MISUSE`), so back-to-back filtered reads on
+  a reused statement failed on every call after the first. Unfiltered reads
+  keep their progressive cursor state
+- `BlobStream.write()` now rejects read-only streams with `error.Locked`
+  before touching SQLite, matching the documented contract. Previously the
+  call reached SQLite, came back as an unmapped `SQLITE_READONLY`
+  (`error.UnknownError` plus an error log), and left the blob handle aborted —
+  making the subsequent `blob_close()` fail as well
+- The error converter now maps `SQLITE_READONLY` to `Error.Locked` instead of
+  logging and returning `error.UnknownError`
+- Test suite fixes: `root.zig` now collects the tests (the suite previously
+  ran zero tests), the statement-reuse test table uses `INTEGER PRIMARY KEY`
+  so the view does not read `NULL` ids, and the progressive scan test dupes
+  row strings before the row memory is freed
 
 ## [v1.2.0] - 2026-10-20
 
