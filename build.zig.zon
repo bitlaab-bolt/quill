@@ -1,6 +1,6 @@
 .{
     .name = .quill,
-    .version = "1.2.0",
+    .version = "1.2.2",
     .fingerprint = 0x943b97bbcda5af24,
     .minimum_zig_version = "0.17.0",
     .dependencies = .{

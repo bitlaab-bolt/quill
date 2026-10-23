@@ -59,7 +59,7 @@ try Builtins.Container.rename(&db, "users", "customers");
 
 ### Reset
 
-Removes all records from a given container.
+Removes all records from a given container. Available actions are `Retain` and `Purge` - where `Purge` vacuums the unused space after the delete.
 
 ```zig
 try Builtins.Container.reset(&db, "users", .Retain);
@@ -67,7 +67,7 @@ try Builtins.Container.reset(&db, "users", .Retain);
 
 ### Delete
 
-Permanently deletes a given container.
+Permanently deletes a given container. Available actions are `Retain` and `Purge` - where `Purge` vacuums the unused space after the drop.
 
 ```zig
 try Builtins.Container.delete(&db, "users", .Retain);
@@ -146,10 +146,10 @@ try Builtins.Pragma.cache(&db);
 
 ### Set Cache
 
-Sets database page cache limits in kilobytes.
+Sets database page cache limit. A positive value sets the number of pages, and a negative value sets the size in kilobytes.
 
 ```zig
-try Builtins.Pragma.setCache(&db, 1024 * 8);
+try Builtins.Pragma.setCache(&db, -1024 * 8);
 ```
 
 ### Page Count
@@ -237,13 +237,15 @@ std.debug.print("Status: {any}\n", .{stat});
 
 Available options are `NONE`, `INCREMENTAL`, and `FULL`.
 
+**Remarks:** Call `claimUnusedSpace()` for the change to take effect.
+
 ```zig
 try Builtins.Pragma.setReclaimMode(&db, .FULL);
 ```
 
 ### Claim Unused Space
 
-Vacuums the database file for clean up any unused space.
+Vacuums the database file for clean up any unused space. For `NONE` and `FULL` mode the `pages` argument is ignored and `null` is returned - the page count is only reported on `INCREMENTAL` mode.
 
 ```zig
 const result = try Builtins.Pragma.claimUnusedSpace(&db, 100);

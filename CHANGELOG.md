@@ -22,6 +22,21 @@ Here we write upgrading notes and make them as straightforward as possible.
 - A short description for fixed item 2
 - A short description for fixed item n
 
+## [v1.2.2] - 2026-10-23
+
+Documentation correctness release for the Builtin Modules guide.
+
+### Changed
+- Documentation: `Builtins.Pragma.setCache()` is now documented correctly -
+  a positive value sets the number of pages and a negative value sets the
+  size in kilobytes (the example previously implied kilobytes only)
+- Documentation: `Builtins.Container.reset()` and `delete()` now document
+  the `Purge` action, which vacuums the unused space after the operation
+- Documentation: added the remark that `Builtins.Pragma.setReclaimMode()`
+  requires a follow-up `claimUnusedSpace()` call to take effect
+- Documentation: `Builtins.Pragma.claimUnusedSpace()` now documents that the
+  `pages` argument is ignored (and `null` returned) on `NONE` and `FULL`
+  vacuum modes
 
 ## [v1.2.1] - 2026-10-23
 
